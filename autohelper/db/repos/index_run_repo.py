@@ -41,6 +41,15 @@ class IndexRunRepository:
         )
         db.commit()
     
+    def _row_to_run(self, row: dict | None) -> dict | None:
+        """Convert database row to run dict with parsed stats."""
+        if not row:
+            return None
+        result = dict(row)
+        if result.get("stats_json"):
+            result["stats"] = json.loads(result["stats_json"])
+        return result
+
     def get(self, run_id: str) -> dict | None:
         """Get index run by ID."""
         db = get_db()
@@ -48,13 +57,7 @@ class IndexRunRepository:
             "SELECT * FROM index_runs WHERE index_run_id = ?",
             (run_id,),
         )
-        row = cursor.fetchone()
-        if row:
-            result = dict(row)
-            if result.get("stats_json"):
-                result["stats"] = json.loads(result["stats_json"])
-            return result
-        return None
+        return self._row_to_run(cursor.fetchone())
     
     def get_latest(self, kind: str | None = None) -> dict | None:
         """Get most recent index run, optionally filtered by kind."""
@@ -69,29 +72,26 @@ class IndexRunRepository:
             cursor = db.execute(
                 "SELECT * FROM index_runs ORDER BY started_at DESC LIMIT 1"
             )
-        row = cursor.fetchone()
-        if row:
-            result = dict(row)
-            if result.get("stats_json"):
-                result["stats"] = json.loads(result["stats_json"])
-            return result
-        return None
+        return self._row_to_run(cursor.fetchone())
 
-    def get_last_completed(self) -> dict | None:
-        """Get most recent completed index run."""
+    def get_last_completed(self, kind: str | None = None) -> dict | None:
+        """Get most recent completed index run, optionally filtered by kind."""
         db = get_db()
-        cursor = db.execute(
-            """SELECT * FROM index_runs 
-            WHERE status = ? ORDER BY finished_at DESC, started_at DESC LIMIT 1""",
-            (IndexRunStatus.COMPLETED.value,),
-        )
-        row = cursor.fetchone()
-        if row:
-            result = dict(row)
-            if result.get("stats_json"):
-                result["stats"] = json.loads(result["stats_json"])
-            return result
-        return None
+        if kind:
+            cursor = db.execute(
+                """SELECT * FROM index_runs 
+                WHERE status = ? AND kind = ? 
+                ORDER BY finished_at DESC, started_at DESC LIMIT 1""",
+                (IndexRunStatus.COMPLETED.value, kind),
+            )
+        else:
+            cursor = db.execute(
+                """SELECT * FROM index_runs 
+                WHERE status = ? 
+                ORDER BY finished_at DESC, started_at DESC LIMIT 1""",
+                (IndexRunStatus.COMPLETED.value,),
+            )
+        return self._row_to_run(cursor.fetchone())
     
     def get_running(self) -> dict | None:
         """Get currently running index run if any."""
@@ -100,8 +100,7 @@ class IndexRunRepository:
             "SELECT * FROM index_runs WHERE status = ? LIMIT 1",
             (IndexRunStatus.RUNNING.value,),
         )
-        row = cursor.fetchone()
-        return dict(row) if row else None
+        return self._row_to_run(cursor.fetchone())
     
     def cancel_stale(self, older_than_minutes: int = 60) -> int:
         """Cancel runs that have been running too long."""
