@@ -1,98 +1,64 @@
-"""Index module routes."""
+"""
+Index module API router.
+"""
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException
+from typing import Annotated, Any
 
+from autohelper.shared.types import RequestContext
 from autohelper.shared.errors import ConflictError
-
-from .schemas import (
-    IndexRunResponse,
-    IndexStatusResponse,
-    RebuildRequest,
-    RescanRequest,
-    RootStats,
-)
+from .schemas import RebuildRequest, RunResponse
 from .service import IndexService
 
 router = APIRouter(prefix="/index", tags=["index"])
 
-
-@router.post("/rebuild", response_model=dict)
-async def rebuild_index(request: RebuildRequest) -> dict:
+@router.post("/rebuild", response_model=RunResponse)
+async def rebuild_index(
+    request: RebuildRequest,
+    background_tasks: BackgroundTasks,
+    # request_context: Annotated[RequestContext, Depends(get_request_context)] # Future: proper context binding
+) -> RunResponse:
     """
-    Trigger a full index rebuild (synchronous).
+    Trigger a full index rebuild.
     
-    Crawls all configured roots (or specified ones) and updates the index.
-    Returns after indexing completes with stats. Returns 409 if already running.
+    Warning: This is a potentially heavy operation.
     """
     service = IndexService()
     
-    try:
-        result = service.rebuild(
-            root_ids=request.root_ids,
-            include_hash=request.include_content_hash,
-            max_hash_size=request.max_file_size_mb * 1024 * 1024,
-        )
-        return result
-    except ConflictError as e:
-        raise HTTPException(status_code=409, detail=e.to_dict()) from e
-
-
-@router.post("/rescan", response_model=dict)
-async def rescan_index(request: RescanRequest) -> dict:
-    """
-    Trigger an incremental rescan.
-    
-    Checks for changed files using stat comparison.
-    Faster than full rebuild for large directories.
-    """
-    service = IndexService()
-    
-    try:
-        result = service.rescan(root_ids=request.root_ids)
-        return result
-    except ConflictError as e:
-        raise HTTPException(status_code=409, detail=e.to_dict()) from e
-
-
-@router.get("/status", response_model=IndexStatusResponse)
-async def get_index_status() -> IndexStatusResponse:
-    """
-    Get current index status.
-    
-    Returns whether indexing is running, last completed run, and counts.
-    """
-    service = IndexService()
+    # Check if already running? Service check handles concurrent runs via DB state or locking?
+    # Our simple implementation allows concurrent runs but that might be bad for DB contention.
+    # The tests expect 409 Conflict if running.
     status = service.get_status()
-    
-    return IndexStatusResponse(
-        is_running=status["is_running"],
-        current_run=_to_run_response(status["current_run"]) if status["current_run"] else None,
-        last_completed=(
-            _to_run_response(status["last_completed"]) if status["last_completed"] else None
-        ),
-        total_roots=status["total_roots"],
-        total_files=status["total_files"],
+    if status["is_running"]:
+        raise ConflictError(message="Index run already in progress")
+
+    return service.rebuild_index(
+        specific_root_id=request.roots[0] if request.roots else None, 
+        force_hash=request.force_hash
     )
 
-
-@router.get("/roots", response_model=list[RootStats])
-async def get_root_stats() -> list[RootStats]:
-    """Get statistics for each indexed root."""
+@router.post("/rescan", response_model=RunResponse)
+async def rescan_index(
+    request: RebuildRequest,
+    background_tasks: BackgroundTasks,
+) -> RunResponse:
+    """Rescan index (alias for rebuild)."""
     service = IndexService()
-    stats = service.get_root_stats()
     
-    return [RootStats(**s) for s in stats]
+    status = service.get_status()
+    if status["is_running"]:
+        raise ConflictError(message="Index run already in progress")
+        
+    return service.rescan()
 
+@router.get("/status")
+async def get_status() -> dict[str, Any]:
+    """Get indexer status."""
+    service = IndexService()
+    return service.get_status()
 
-def _to_run_response(run: dict) -> IndexRunResponse:
-    """Convert run dict to response model."""
-    from datetime import datetime
-    
-    return IndexRunResponse(
-        index_run_id=run["index_run_id"],
-        kind=run["kind"],
-        status=run["status"],
-        started_at=datetime.fromisoformat(run["started_at"]),
-        finished_at=datetime.fromisoformat(run["finished_at"]) if run.get("finished_at") else None,
-        stats=run.get("stats"),
-    )
+@router.get("/roots")
+async def get_roots() -> list[dict[str, Any]]:
+    """Get configured roots and their stats."""
+    service = IndexService()
+    return service.get_roots_stats()
