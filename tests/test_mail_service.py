@@ -97,3 +97,147 @@ def test_ingest_pst(tmp_path):
 
     # Cleanup
     reset_settings()
+
+
+def test_ingest_pst_invalid_extension(tmp_path):
+    """Ensure ingest_pst rejects non-PST/OST files."""
+    from autohelper.config import Settings, init_settings, reset_settings
+    from autohelper.db import init_db
+
+    reset_settings()
+    settings = Settings(mail_enabled=True, mail_ingest_path=tmp_path)
+    init_settings(settings)
+
+    db_file = tmp_path / "test.db"
+    db = init_db(db_file)
+    db.execute(
+        "CREATE TABLE mail_ingestion_log ("
+        "id INTEGER PRIMARY KEY AUTOINCREMENT, "
+        "source_path TEXT NOT NULL, "
+        "ingested_at DATETIME DEFAULT CURRENT_TIMESTAMP, "
+        "email_count INTEGER DEFAULT 0, "
+        "status TEXT DEFAULT 'pending', "
+        "error_message TEXT)"
+    )
+    db.execute(
+        "CREATE TABLE transient_emails ("
+        "id TEXT PRIMARY KEY, "
+        "subject TEXT, "
+        "sender TEXT, "
+        "received_at DATETIME, "
+        "project_id TEXT, "
+        "body_preview TEXT, "
+        "metadata JSON, "
+        "ingestion_id INTEGER, "
+        "created_at DATETIME DEFAULT CURRENT_TIMESTAMP)"
+    )
+
+    # Create a non-PST file inside the ingest directory
+    invalid_file = tmp_path / "not_a_pst.txt"
+    invalid_file.write_text("dummy content")
+
+    service = MailService()
+    service.settings = settings
+    result = service.ingest_pst(str(invalid_file))
+
+    assert result["success"] is False
+    # Error message should indicate invalid extension / file type
+    assert "pst" in result["error"].lower() or "ost" in result["error"].lower()
+
+    reset_settings()
+
+
+def test_ingest_pst_outside_ingest_path(tmp_path):
+    """Ensure ingest_pst rejects files outside configured mail_ingest_path."""
+    from autohelper.config import Settings, init_settings, reset_settings
+    from autohelper.db import init_db
+
+    reset_settings()
+    ingest_dir = tmp_path / "ingest"
+    ingest_dir.mkdir()
+    settings = Settings(mail_enabled=True, mail_ingest_path=ingest_dir)
+    init_settings(settings)
+
+    db_file = tmp_path / "test.db"
+    db = init_db(db_file)
+    db.execute(
+        "CREATE TABLE mail_ingestion_log ("
+        "id INTEGER PRIMARY KEY AUTOINCREMENT, "
+        "source_path TEXT NOT NULL, "
+        "ingested_at DATETIME DEFAULT CURRENT_TIMESTAMP, "
+        "email_count INTEGER DEFAULT 0, "
+        "status TEXT DEFAULT 'pending', "
+        "error_message TEXT)"
+    )
+    db.execute(
+        "CREATE TABLE transient_emails ("
+        "id TEXT PRIMARY KEY, "
+        "subject TEXT, "
+        "sender TEXT, "
+        "received_at DATETIME, "
+        "project_id TEXT, "
+        "body_preview TEXT, "
+        "metadata JSON, "
+        "ingestion_id INTEGER, "
+        "created_at DATETIME DEFAULT CURRENT_TIMESTAMP)"
+    )
+
+    # Create a PST file outside the ingest directory
+    outside_file = tmp_path / "outside.pst"
+    outside_file.write_bytes(b"dummy pst content")
+
+    service = MailService()
+    service.settings = settings
+    result = service.ingest_pst(str(outside_file))
+
+    assert result["success"] is False
+    # Error should indicate path restriction / outside ingest directory
+    assert "ingest" in result["error"].lower() or str(ingest_dir).lower() in result["error"].lower()
+
+    reset_settings()
+
+
+def test_ingest_pst_missing_file(tmp_path):
+    """Ensure ingest_pst handles missing/nonexistent files safely."""
+    from autohelper.config import Settings, init_settings, reset_settings
+    from autohelper.db import init_db
+
+    reset_settings()
+    settings = Settings(mail_enabled=True, mail_ingest_path=tmp_path)
+    init_settings(settings)
+
+    db_file = tmp_path / "test.db"
+    db = init_db(db_file)
+    db.execute(
+        "CREATE TABLE mail_ingestion_log ("
+        "id INTEGER PRIMARY KEY AUTOINCREMENT, "
+        "source_path TEXT NOT NULL, "
+        "ingested_at DATETIME DEFAULT CURRENT_TIMESTAMP, "
+        "email_count INTEGER DEFAULT 0, "
+        "status TEXT DEFAULT 'pending', "
+        "error_message TEXT)"
+    )
+    db.execute(
+        "CREATE TABLE transient_emails ("
+        "id TEXT PRIMARY KEY, "
+        "subject TEXT, "
+        "sender TEXT, "
+        "received_at DATETIME, "
+        "project_id TEXT, "
+        "body_preview TEXT, "
+        "metadata JSON, "
+        "ingestion_id INTEGER, "
+        "created_at DATETIME DEFAULT CURRENT_TIMESTAMP)"
+    )
+
+    missing_file = tmp_path / "missing.pst"
+    # Do not create the file
+
+    service = MailService()
+    service.settings = settings
+    result = service.ingest_pst(str(missing_file))
+
+    assert result["success"] is False
+    assert "not found" in result["error"].lower()
+
+    reset_settings()

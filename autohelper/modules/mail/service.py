@@ -304,7 +304,19 @@ class MailService:
                 att_folder.mkdir(exist_ok=True)
                 for i in range(item.Attachments.Count):
                     att = item.Attachments.Item(i + 1)
-                    att.SaveAsFile(str(att_folder / att.FileName))
+
+                    # Sanitize filename and handle collisions
+                    raw_name = getattr(att, "FileName", "") or "attachment"
+                    safe_name = make_safe_filename(raw_name, max_length=100)
+
+                    base, ext = os.path.splitext(safe_name)
+                    candidate = att_folder / safe_name
+                    index = 1
+                    while candidate.exists():
+                        candidate = att_folder / f"{base}_{index}{ext}"
+                        index += 1
+
+                    att.SaveAsFile(str(candidate))
 
             # 4. Save to DB (Transient)
             self._save_transient_record(item, proj_id, received_dt)

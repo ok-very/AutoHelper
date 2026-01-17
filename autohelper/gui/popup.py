@@ -48,15 +48,56 @@ def _ensure_qt_imported():
     global QApplication, QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushButton, QPlainTextEdit, QLineEdit, QProgressBar, QFileDialog, QThread, Signal, Qt, QTimer, QScreen, QColor, QSystemTrayIcon, QMenu, QAction, QStyle, QIcon, QEvent, QTabWidget, QListWidget, QListWidgetItem, QComboBox, QMessageBox, QFrame, QScrollArea, QCheckBox, QSpinBox
     if QApplication is not None:
         return True
-    
+
     try:
-        from PySide6.QtWidgets import (QApplication, QWidget, QVBoxLayout, QHBoxLayout, 
-                                     QLabel, QPushButton, QPlainTextEdit, QLineEdit, 
-                                     QProgressBar, QFileDialog, QSystemTrayIcon, QMenu, QStyle,
-                                     QTabWidget, QListWidget, QListWidgetItem, QComboBox, QMessageBox,
-                                     QFrame, QScrollArea, QCheckBox, QSpinBox)
-        from PySide6.QtCore import QThread, Signal, Qt, QTimer, QEvent
-        from PySide6.QtGui import QScreen, QColor, QAction, QIcon
+        from PySide6.QtWidgets import (
+            QApplication as _QApplication, QWidget as _QWidget,
+            QVBoxLayout as _QVBoxLayout, QHBoxLayout as _QHBoxLayout,
+            QLabel as _QLabel, QPushButton as _QPushButton,
+            QPlainTextEdit as _QPlainTextEdit, QLineEdit as _QLineEdit,
+            QProgressBar as _QProgressBar, QFileDialog as _QFileDialog,
+            QSystemTrayIcon as _QSystemTrayIcon, QMenu as _QMenu, QStyle as _QStyle,
+            QTabWidget as _QTabWidget, QListWidget as _QListWidget,
+            QListWidgetItem as _QListWidgetItem, QComboBox as _QComboBox,
+            QMessageBox as _QMessageBox, QFrame as _QFrame,
+            QScrollArea as _QScrollArea, QCheckBox as _QCheckBox, QSpinBox as _QSpinBox
+        )
+        from PySide6.QtCore import QThread as _QThread, Signal as _Signal, Qt as _Qt, QTimer as _QTimer, QEvent as _QEvent
+        from PySide6.QtGui import QScreen as _QScreen, QColor as _QColor, QAction as _QAction, QIcon as _QIcon
+
+        # Assign to module-level globals
+        QApplication = _QApplication
+        QWidget = _QWidget
+        QVBoxLayout = _QVBoxLayout
+        QHBoxLayout = _QHBoxLayout
+        QLabel = _QLabel
+        QPushButton = _QPushButton
+        QPlainTextEdit = _QPlainTextEdit
+        QLineEdit = _QLineEdit
+        QProgressBar = _QProgressBar
+        QFileDialog = _QFileDialog
+        QSystemTrayIcon = _QSystemTrayIcon
+        QMenu = _QMenu
+        QStyle = _QStyle
+        QTabWidget = _QTabWidget
+        QListWidget = _QListWidget
+        QListWidgetItem = _QListWidgetItem
+        QComboBox = _QComboBox
+        QMessageBox = _QMessageBox
+        QFrame = _QFrame
+        QScrollArea = _QScrollArea
+        QCheckBox = _QCheckBox
+        QSpinBox = _QSpinBox
+        QThread = _QThread
+        Signal = _Signal
+        Qt = _Qt
+        QTimer = _QTimer
+        QEvent = _QEvent
+        QScreen = _QScreen
+        QColor = _QColor
+        QAction = _QAction
+        QIcon = _QIcon
+
         return True
     except ImportError:
         print("Warning: PySide6 not installed. install with `pip install PySide6`")
@@ -541,14 +582,14 @@ def get_window_class():
                 item = self.list_roots.item(i)
                 if item.checkState() == Qt.Checked:
                     valid_roots.append(item.text())
-            
-            # Save
+
+            # Save - preserve autoart_session_id if previously set via pairing
             new_config = {
                 "allowed_roots": valid_roots,
                 "excludes": self.current_config.get("excludes", []),
                 "mail_enabled": self.chk_mail_enabled.isChecked(),
                 "mail_poll_interval": self.spin_mail_interval.value(),
-                "monday_api_token": self.txt_monday_token.text().strip(),
+                "autoart_session_id": self.current_config.get("autoart_session_id", ""),
             }
             try:
                 self.config_store.save(new_config)

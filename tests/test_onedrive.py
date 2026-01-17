@@ -111,14 +111,18 @@ class TestOneDriveManager:
     
     def test_is_available_on_windows(self) -> None:
         """OneDriveManager should be available on Windows."""
-        with patch.object(sys, 'platform', 'win32'):
-            with patch('ctypes.windll') as mock_windll:
-                from importlib import reload
-                from autohelper.infra.fs import onedrive
-                reload(onedrive)
-                
-                manager = onedrive.OneDriveManager()
-                # Note: May still be False if kernel32 load fails in test env
+        from autohelper.infra.fs.onedrive import OneDriveManager
+
+        manager = OneDriveManager()
+
+        # Force Windows mode for testing
+        manager._is_windows = True
+
+        # Mock the kernel32 attribute check to simulate Windows availability
+        manager._kernel32 = MagicMock()
+
+        # Now is_available should return True
+        assert manager.is_available is True
     
     def test_is_offline_file_false_when_not_available(self) -> None:
         """is_offline_file should return False when not on Windows."""
@@ -143,24 +147,74 @@ class TestOneDriveManager:
 
 class TestIndexServiceOfflineHandling:
     """Tests for IndexService handling of offline files."""
-    
-    def test_upsert_skips_hash_for_offline(self) -> None:
+
+    def test_upsert_skips_hash_for_offline(self, tmp_path) -> None:
         """_upsert_file should skip hashing for offline files."""
-        # This test would require more setup with DB mocking
-        # For now, we verify the logic exists via inspection
-        from autohelper.modules.index import service
-        
-        # Verify the code contains offline check
-        import inspect
-        source = inspect.getsource(service.IndexService._upsert_file)
-        assert "is_offline" in source
-        assert "Skipping hash for offline file" in source
-    
-    def test_scan_root_skips_rename_for_offline(self) -> None:
-        """_scan_root should skip rename detection for offline files."""
-        from autohelper.modules.index import service
-        
-        import inspect
-        source = inspect.getsource(service.IndexService._scan_root)
-        assert "is_offline" in source
-        assert "Skipping rename detection for offline file" in source
+        from unittest.mock import MagicMock, patch
+
+        # Create mocks for dependencies
+        mock_db = MagicMock()
+        mock_settings = MagicMock()
+        mock_settings.get_allowed_roots.return_value = [tmp_path]
+        mock_settings.block_symlinks = False
+
+        with patch('autohelper.modules.index.service.get_settings', return_value=mock_settings):
+            with patch('autohelper.modules.index.service.get_db', return_value=mock_db):
+                with patch('autohelper.modules.index.service.hasher') as mock_hasher:
+                    from autohelper.modules.index.service import IndexService
+
+                    service = IndexService()
+
+                    # Create an offline file stat
+                    mock_stat = MagicMock()
+                    mock_stat.is_offline = True
+                    mock_stat.size = 1024
+                    mock_stat.mtime_ns = 1000000000
+
+                    # Call _upsert_file with offline stat
+                    service._upsert_file(
+                        root_id="test_root",
+                        root_path=tmp_path,
+                        rel_path="test.txt",
+                        stat=mock_stat,
+                        existing_id=None,
+                        force_hash=False
+                    )
+
+                    # Assert hasher was never called for offline file
+                    mock_hasher.hash_file.assert_not_called()
+
+    def test_upsert_hashes_online_file(self, tmp_path) -> None:
+        """_upsert_file should hash online files (when small enough)."""
+        from unittest.mock import MagicMock, patch
+
+        mock_db = MagicMock()
+        mock_settings = MagicMock()
+        mock_settings.get_allowed_roots.return_value = [tmp_path]
+        mock_settings.block_symlinks = False
+
+        with patch('autohelper.modules.index.service.get_settings', return_value=mock_settings):
+            with patch('autohelper.modules.index.service.get_db', return_value=mock_db):
+                with patch('autohelper.modules.index.service.hasher') as mock_hasher:
+                    mock_hasher.hash_file.return_value = "abc123"
+                    from autohelper.modules.index.service import IndexService
+
+                    service = IndexService()
+
+                    # Create an online (not offline) file stat under size limit
+                    mock_stat = MagicMock()
+                    mock_stat.is_offline = False
+                    mock_stat.size = 1024  # Under 1MB threshold
+                    mock_stat.mtime_ns = 1000000000
+
+                    service._upsert_file(
+                        root_id="test_root",
+                        root_path=tmp_path,
+                        rel_path="test.txt",
+                        stat=mock_stat,
+                        existing_id=None,
+                        force_hash=False
+                    )
+
+                    # Assert hasher was called for online file
+                    mock_hasher.hash_file.assert_called_once()

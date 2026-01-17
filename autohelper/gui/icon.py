@@ -14,8 +14,13 @@ class AutoHelperIcon:
     """
     System tray icon for AutoHelper.
     """
-    def __init__(self, stop_callback: Callable[[], None]):
+    def __init__(
+        self,
+        stop_callback: Callable[[], None],
+        config_callback: Optional[Callable[[], None]] = None
+    ):
         self.stop_callback = stop_callback
+        self.config_callback = config_callback
         self.icon: Optional[pystray.Icon] = None
         self._setup_icon()
 
@@ -79,8 +84,26 @@ class AutoHelperIcon:
         )
 
     def on_configure(self, icon, item):
-        """Launch the configuration popup."""
-        launch_config_popup()
+        """Launch the configuration popup.
+
+        Prefer using an injected non-blocking callback over directly
+        starting a Qt event loop from the pystray callback.
+        """
+        # If the icon has been configured with a dedicated configuration
+        # callback, use that instead of directly invoking the Qt popup.
+        if self.config_callback:
+            self.config_callback()
+            return
+
+        # Fallback for backward compatibility. This may start a Qt event loop
+        # and should be avoided when an external event loop (e.g. Qt) is
+        # already running; callers are encouraged to provide `config_callback`.
+        try:
+            launch_config_popup()
+        except RuntimeError as exc:
+            # Avoid crashing the tray callback if launching the popup
+            # from this context is unsafe.
+            print(f"Configuration popup could not be launched from tray callback: {exc}")
 
     def on_exit(self, icon, item):
         """Stop the application."""

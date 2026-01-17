@@ -51,18 +51,22 @@ class AutoArtClient:
     def __init__(
         self,
         api_url: str = "http://localhost:3000",
-        api_key: str | None = None
+        api_key: str | None = None,
+        session_id: str | None = None
     ):
         self.api_url = api_url.rstrip("/")
         self.api_key = api_key
+        self.session_id = session_id
         self._cached_projects: list[dict[str, Any]] | None = None
         self._cached_developers: list[str] | None = None
 
     def _get_headers(self) -> dict[str, str]:
-        """Build request headers with optional API key."""
+        """Build request headers with optional API key and session ID."""
         headers = {"Content-Type": "application/json"}
         if self.api_key:
             headers["Authorization"] = f"Bearer {self.api_key}"
+        if self.session_id:
+            headers["X-AutoHelper-Session"] = self.session_id
         return headers
 
     def _request(

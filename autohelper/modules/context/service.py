@@ -79,21 +79,34 @@ class ContextService:
         """Initialize API clients based on settings."""
         from autohelper.modules.context.monday import MondayClient, MondayClientError
         from autohelper.modules.context.autoart import AutoArtClient
-        
-        # Monday client (needs API token)
+        from autohelper.config.store import ConfigStore
+
+        # Load config from ConfigStore (where GUI saves settings)
+        config_store = ConfigStore()
+        config = config_store.load()
+
+        # AutoArt client (local server, may not be running)
+        # Use session_id from ConfigStore if available, otherwise fall back to settings
+        autoart_url = getattr(self.settings, 'autoart_api_url', 'http://localhost:3000')
+        autoart_key = getattr(self.settings, 'autoart_api_key', None)
+        autoart_session_id = config.get('autoart_session_id') or getattr(self.settings, 'autoart_session_id', '')
+        self._autoart_client = AutoArtClient(
+            api_url=autoart_url,
+            api_key=autoart_key,
+            session_id=autoart_session_id
+        )
+
+        # Monday client is now accessed via AutoArt proxy (using session_id)
+        # Direct Monday client is only initialized if we have a direct token in settings
+        # (for backward compatibility or direct API access scenarios)
         monday_token = getattr(self.settings, 'monday_api_token', None)
         if monday_token:
             try:
                 self._monday_client = MondayClient(token=monday_token)
-                logger.info("Monday client initialized")
+                logger.info("Monday client initialized (direct token)")
             except (ValueError, MondayClientError) as e:
                 logger.warning(f"Failed to init Monday client: {e}")
                 self._monday_client = None
-        
-        # AutoArt client (local server, may not be running)
-        autoart_url = getattr(self.settings, 'autoart_api_url', 'http://localhost:3000')
-        autoart_key = getattr(self.settings, 'autoart_api_key', None)
-        self._autoart_client = AutoArtClient(api_url=autoart_url, api_key=autoart_key)
     
     def reinit_clients(self) -> None:
         """Reinitialize clients (call after settings change)."""
