@@ -49,7 +49,7 @@ class Settings(BaseSettings):
     # Context Layer / External Data Sources
     autoart_api_url: str = "http://localhost:3000"
     autoart_api_key: str = ""  # Optional API key for AutoArt
-    monday_api_token: str = ""  # Monday.com API token (secret)
+    autoart_session_id: str = ""  # Session ID from AutoArt pairing (Monday token proxied via this)
     context_providers: list[str] = Field(default=["autoart", "monday"])  # Priority order
     
     def get_allowed_roots(self) -> list[Path]:

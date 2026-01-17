@@ -173,3 +173,90 @@ class AutoArtClient:
         """Clear cached data."""
         self._cached_projects = None
         self._cached_developers = None
+    
+    # =========================================================================
+    # PAIRING & CREDENTIAL PROXYING
+    # =========================================================================
+    
+    def pair_with_code(self, code: str, instance_name: str = "AutoHelper") -> str | None:
+        """
+        Exchange a pairing code for a session ID.
+        
+        Args:
+            code: 6-digit pairing code from AutoArt
+            instance_name: Name to identify this AutoHelper instance
+            
+        Returns:
+            Session ID on success, None on failure
+        """
+        try:
+            response = requests.post(
+                f"{self.api_url}/api/connections/autohelper/handshake",
+                json={"code": code, "instanceName": instance_name},
+                headers={"Content-Type": "application/json"},
+                timeout=10
+            )
+            
+            if response.status_code == 200:
+                result = response.json()
+                session_id = result.get("sessionId")
+                logger.info(f"Paired with AutoArt, session: {session_id[:8]}...")
+                return session_id
+            else:
+                logger.warning(f"Pairing failed: {response.status_code} - {response.text}")
+                return None
+                
+        except requests.RequestException as e:
+            logger.error(f"Pairing request failed: {e}")
+            return None
+    
+    def get_monday_token(self, session_id: str) -> str | None:
+        """
+        Fetch Monday API token from AutoArt using session credentials.
+        
+        This makes AutoArt the single source of truth for API tokens,
+        eliminating the need to store the Monday key locally.
+        
+        Args:
+            session_id: Valid session ID from pairing
+            
+        Returns:
+            Monday API token on success, None on failure
+        """
+        try:
+            response = requests.get(
+                f"{self.api_url}/api/connections/autohelper/credentials",
+                headers={
+                    "X-AutoHelper-Session": session_id,
+                    "Content-Type": "application/json"
+                },
+                timeout=10
+            )
+            
+            if response.status_code == 200:
+                result = response.json()
+                token = result.get("monday_api_token")
+                if token:
+                    logger.debug("Retrieved Monday token from AutoArt")
+                    return token
+                    
+            logger.warning(f"Failed to get Monday token: {response.status_code}")
+            return None
+            
+        except requests.RequestException as e:
+            logger.error(f"Credential fetch failed: {e}")
+            return None
+    
+    def verify_session(self, session_id: str) -> bool:
+        """
+        Verify that a session ID is still valid.
+        
+        Args:
+            session_id: Session ID to verify
+            
+        Returns:
+            True if session is valid, False otherwise
+        """
+        # The credentials endpoint will fail if session is invalid
+        return self.get_monday_token(session_id) is not None
+

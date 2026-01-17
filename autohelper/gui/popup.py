@@ -324,29 +324,36 @@ def get_window_class():
             
             layout.addWidget(status_grp)
             
-            # 2. Monday Context Section
+            # 2. AutoArt Connection Section
             context_grp = QFrame()
             context_grp.setStyleSheet("background: white; border: 1px solid #eceff1; border-radius: 4px;")
             c_layout = QVBoxLayout(context_grp)
             
-            c_layout.addWidget(QLabel("Monday.com Integration"))
+            c_layout.addWidget(QLabel("AutoArt Connection"))
+            c_layout.addWidget(QLabel("Connect to AutoArt to access Monday.com data", styleSheet="color: #78909c; font-size: 11px;"))
             
-            row_token = QHBoxLayout()
-            row_token.addWidget(QLabel("API Token:"))
-            self.txt_monday_token = QLineEdit()
-            self.txt_monday_token.setPlaceholderText("Enter Monday.com API token...")
-            self.txt_monday_token.setEchoMode(QLineEdit.Password)  # Hide token
-            self.txt_monday_token.setText(self.current_config.get("monday_api_token", ""))
-            row_token.addWidget(self.txt_monday_token)
-            c_layout.addLayout(row_token)
-            
-            self.lbl_context_status = QLabel("Not connected")
-            self.lbl_context_status.setStyleSheet("color: #90a4ae; font-style: italic;")
+            # Show current connection status
+            session_id = self.current_config.get("autoart_session_id", "")
+            if session_id:
+                self.lbl_context_status = QLabel("✓ Connected to AutoArt")
+                self.lbl_context_status.setStyleSheet("color: #4caf50;")
+            else:
+                self.lbl_context_status = QLabel("Not connected")
+                self.lbl_context_status.setStyleSheet("color: #90a4ae; font-style: italic;")
             c_layout.addWidget(self.lbl_context_status)
             
-            btn_test_context = QPushButton("Test Connection")
-            btn_test_context.clicked.connect(self.test_monday_connection)
-            c_layout.addWidget(btn_test_context)
+            # Pairing code input
+            row_code = QHBoxLayout()
+            row_code.addWidget(QLabel("Pairing Code:"))
+            self.txt_pairing_code = QLineEdit()
+            self.txt_pairing_code.setPlaceholderText("Enter 6-digit code from AutoArt...")
+            self.txt_pairing_code.setMaxLength(6)
+            row_code.addWidget(self.txt_pairing_code)
+            c_layout.addLayout(row_code)
+            
+            btn_pair = QPushButton("Connect")
+            btn_pair.clicked.connect(self.pair_with_autoart)
+            c_layout.addWidget(btn_pair)
             
             layout.addWidget(context_grp)
             
@@ -370,32 +377,39 @@ def get_window_class():
             # Connect change signals to enable save
             self.chk_mail_enabled.stateChanged.connect(lambda: self.btn_save.setEnabled(True))
             self.spin_mail_interval.valueChanged.connect(lambda: self.btn_save.setEnabled(True))
-            self.txt_monday_token.textChanged.connect(lambda: self.btn_save.setEnabled(True))
         
-        def test_monday_connection(self):
-            """Test the Monday.com API connection."""
-            token = self.txt_monday_token.text().strip()
-            if not token:
-                self.lbl_context_status.setText("No token provided")
+        def pair_with_autoart(self):
+            """Pair with AutoArt using the 6-digit code."""
+            code = self.txt_pairing_code.text().strip()
+            if not code or len(code) != 6:
+                self.lbl_context_status.setText("Enter 6-digit code")
                 self.lbl_context_status.setStyleSheet("color: #ffa000;")
                 return
             
-            self.lbl_context_status.setText("Testing...")
+            self.lbl_context_status.setText("Pairing...")
             self.lbl_context_status.setStyleSheet("color: #2196f3;")
-            QApplication.processEvents()  # Force UI update
+            QApplication.processEvents()
             
             try:
-                from autohelper.modules.context.monday import MondayClient, MondayClientError
-                client = MondayClient(token=token)
-                user = client.get_me()
-                name = user.get("name", "Unknown")
-                self.lbl_context_status.setText(f"✓ Connected as {name}")
-                self.lbl_context_status.setStyleSheet("color: #4caf50;")
-            except MondayClientError as e:
-                self.lbl_context_status.setText(f"✗ {str(e)[:40]}...")
-                self.lbl_context_status.setStyleSheet("color: #d32f2f;")
+                from autohelper.modules.context.autoart import AutoArtClient
+                from autohelper.config.settings import get_settings
+                
+                settings = get_settings()
+                client = AutoArtClient(api_url=settings.autoart_api_url)
+                session_id = client.pair_with_code(code)
+                
+                if session_id:
+                    # Save session ID
+                    self.current_config["autoart_session_id"] = session_id
+                    self.lbl_context_status.setText("✓ Connected to AutoArt")
+                    self.lbl_context_status.setStyleSheet("color: #4caf50;")
+                    self.txt_pairing_code.clear()
+                    self.btn_save.setEnabled(True)  # Enable save to persist session
+                else:
+                    self.lbl_context_status.setText("✗ Invalid or expired code")
+                    self.lbl_context_status.setStyleSheet("color: #d32f2f;")
             except Exception as e:
-                self.lbl_context_status.setText(f"✗ Error: {str(e)[:40]}")
+                self.lbl_context_status.setText(f"✗ Error: {str(e)[:30]}")
                 self.lbl_context_status.setStyleSheet("color: #d32f2f;")
 
         def ingest_pst_dialog(self):
