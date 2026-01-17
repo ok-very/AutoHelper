@@ -6,9 +6,6 @@ from datetime import UTC, datetime
 from autohelper.db import get_db
 from autohelper.shared.ids import generate_file_id
 
-# Batch size for bulk operations (memory-conscious)
-BATCH_SIZE = 500
-
 
 class FileRepository:
     """CRUD operations for files table with memory-efficient batching."""

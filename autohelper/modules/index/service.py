@@ -11,7 +11,6 @@ from pathlib import Path
 from autohelper.config import get_settings
 from autohelper.db.repos import FileRepository, IndexRunRepository, RootRepository
 from autohelper.infra.fs.hashing import hasher
-from autohelper.infra.fs.path_policy import PathPolicy
 from autohelper.shared.errors import ConflictError
 from autohelper.shared.logging import get_logger
 from autohelper.shared.types import IndexRunStatus
@@ -40,26 +39,17 @@ class IndexService:
         self._run_repo = IndexRunRepository()
         self._settings = get_settings()
     
-    def _get_policy(self) -> PathPolicy:
-        """Get path policy from settings."""
-        roots = self._settings.get_allowed_roots()
-        return PathPolicy(roots, self._settings.block_symlinks)
-    
     def _walk_directory(
         self,
         root_path: Path,
         root_id: str,
         include_hash: bool = False,
         max_hash_size: int = DEFAULT_MAX_HASH_SIZE,
-    ) -> Generator[dict, None, tuple[int, int, int]]:
+    ) -> Generator[dict, None, None]:
         """
         Memory-efficient directory walker using os.scandir.
-        Yields file metadata dicts, returns (files, dirs, errors) count.
+        Yields file metadata dicts.
         """
-        files_count = 0
-        dirs_count = 0
-        errors_count = 0
-        
         # Use os.walk with scandir for memory efficiency
         for dirpath, _dirnames, filenames in os.walk(root_path, onerror=lambda e: None):
             current = Path(dirpath)
@@ -85,10 +75,8 @@ class IndexService:
                     "ext": "",
                     "content_hash": None,
                 }
-                dirs_count += 1
             except OSError as e:
                 logger.debug(f"Error reading dir {current}: {e}")
-                errors_count += 1
             
             # Yield file entries
             for filename in filenames:
@@ -117,12 +105,8 @@ class IndexService:
                         "ext": ext,
                         "content_hash": content_hash,
                     }
-                    files_count += 1
                 except OSError as e:
                     logger.debug(f"Error reading file {file_path}: {e}")
-                    errors_count += 1
-        
-        return files_count, dirs_count, errors_count
     
     def rebuild(
         self,
@@ -158,11 +142,11 @@ class IndexService:
         
         # Get roots to process
         if root_ids:
-            roots = [
-                self._root_repo.get_by_id(rid)
-                for rid in root_ids
-                if self._root_repo.get_by_id(rid)
-            ]
+            roots = []
+            for rid in root_ids:
+                root = self._root_repo.get_by_id(rid)
+                if root is not None:
+                    roots.append(root)
         else:
             roots = self._root_repo.list_enabled()
         
@@ -174,7 +158,6 @@ class IndexService:
         
         total_files = 0
         total_dirs = 0
-        total_errors = 0
         roots_processed = 0
         
         try:
@@ -221,7 +204,6 @@ class IndexService:
                 "roots_processed": roots_processed,
                 "files_indexed": total_files,
                 "dirs_indexed": total_dirs,
-                "errors": total_errors,
                 "elapsed_seconds": elapsed,
             }
             

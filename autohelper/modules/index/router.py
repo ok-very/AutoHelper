@@ -1,6 +1,6 @@
 """Index module routes."""
 
-from fastapi import APIRouter, BackgroundTasks, HTTPException
+from fastapi import APIRouter, HTTPException
 
 from autohelper.shared.errors import ConflictError
 
@@ -17,20 +17,16 @@ router = APIRouter(prefix="/index", tags=["index"])
 
 
 @router.post("/rebuild", response_model=dict)
-async def rebuild_index(
-    request: RebuildRequest,
-    background_tasks: BackgroundTasks,
-) -> dict:
+async def rebuild_index(request: RebuildRequest) -> dict:
     """
-    Trigger a full index rebuild.
+    Trigger a full index rebuild (synchronous).
     
     Crawls all configured roots (or specified ones) and updates the index.
-    Returns immediately with run ID; check /index/status for progress.
+    Returns after indexing completes with stats. Returns 409 if already running.
     """
     service = IndexService()
     
     try:
-        # Run synchronously for now (could be background task for very large dirs)
         result = service.rebuild(
             root_ids=request.root_ids,
             include_hash=request.include_content_hash,
