@@ -14,6 +14,8 @@ class FileResult(BaseModel):
     size: int
     mtime: int
     is_dir: bool = False
+    matched_alias: bool = False
+    alias_of: str | None = None
     
     class Config:
         from_attributes = True

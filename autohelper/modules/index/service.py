@@ -3,6 +3,7 @@ Index service - core crawling logic.
 """
 
 import json
+import uuid
 import time
 from datetime import datetime, timezone
 from pathlib import Path
@@ -232,7 +233,7 @@ class IndexService:
         existing_files = {}
         cursor = self.db.execute(
             """
-            SELECT file_id, rel_path, mtime_ns, size, content_hash 
+            SELECT file_id, rel_path, canonical_path, mtime_ns, size, content_hash 
             FROM files 
             WHERE root_id = ?
             """,
@@ -242,18 +243,12 @@ class IndexService:
             existing_files[row["rel_path"]] = dict(row)
         
         seen_rel_paths = set()
-        
+        potential_new_files = [] # List of (rel_path, stat)
+
         # Walk filesystem
         try:
-            # We use os.walk/iterdir via local_fs abstraction if possible, 
-            # but for performance recursive walk is best done directly or via simplified walker
-            # Here we follow a simple recursive approach using local_fs.walk if available or os.walk
-            
-            # Simple recursive walk since local_fs.walk returns EVERYTHING and might be huge
-            # Let's iterate carefully.
-            
             for parent, dirs, files in self.fs.walk(root_path):
-                # Filter dirs? (e.g. .git) - skipping hidden dirs for now
+                # Filter dirs
                 dirs[:] = [d for d in dirs if not d.startswith('.')]
                 
                 for filename in files:
@@ -263,48 +258,94 @@ class IndexService:
                     file_path = parent / filename
                     try:
                         rel_path = str(file_path.relative_to(root_path))
-                        seen_rel_paths.add(rel_path)
                         
                         file_stat = self.fs.stat(file_path)
                         stats.total_size += file_stat.size
                         
-                        # Check against existing
                         existing = existing_files.get(rel_path)
                         
                         if existing:
-                            # Update logic: check mtime/size
+                            seen_rel_paths.add(rel_path)
+                            # Update check
                             if (not force_hash and 
                                 existing["size"] == file_stat.size and 
                                 existing["mtime_ns"] == file_stat.mtime_ns):
                                 # No change
-                                # Update last_seen_at
                                 self.db.execute(
                                     "UPDATE files SET last_seen_at = ? WHERE file_id = ?",
                                     (utcnow_iso(), existing["file_id"])
                                 )
                                 continue
                             
-                            # Changed
+                            # Changed file content
                             self._upsert_file(root_id, root_path, rel_path, file_stat, existing["file_id"], force_hash)
                             stats.updated += 1
                         else:
-                            # New file
-                            self._upsert_file(root_id, root_path, rel_path, file_stat, None, force_hash)
-                            stats.added += 1
+                            # Potential new file
+                            potential_new_files.append((rel_path, file_stat))
                             
                     except Exception as e:
                         logger.warning(f"Error scanning file {file_path}: {e}")
                         stats.errors += 1
-                        
-                # Commit batch every so often? For now rely on sqlite speed
             
-            self.db.commit()
-            
-            # Handle deletions
+            # PHASE 2: Handle Missing & Rename Detection
+            missing_files = []
             for rel_path, info in existing_files.items():
                 if rel_path not in seen_rel_paths:
-                    # File is gone
-                    self.db.execute("DELETE FROM files WHERE file_id = ?", (info["file_id"],))
+                    missing_files.append(info)
+
+            # Group missing by size for matching
+            missing_by_size = {}
+            for m in missing_files:
+                if m["content_hash"]:
+                    missing_by_size.setdefault(m["size"], []).append(m)
+            
+            processed_missing_ids = set()
+            
+            for rel_path, stat in potential_new_files:
+                matched_target = None
+                
+                # Try to find a rename match
+                candidates = [m for m in missing_by_size.get(stat.size, []) if m["file_id"] not in processed_missing_ids]
+                
+                if candidates:
+                    try:
+                        # Hash the new file
+                        current_hash = hasher.hash_file(root_path / rel_path)
+                        
+                        # Filter candidates by hash
+                        hash_matches = [c for c in candidates if c["content_hash"] == current_hash]
+                        
+                        if hash_matches:
+                            # Resolve ambiguity
+                            target = self._resolve_rename_ambiguity(hash_matches, rel_path)
+                            
+                            if target:
+                                # Check Registry (Refs)
+                                is_referenced = self.db.execute(
+                                    "SELECT 1 FROM refs WHERE file_id = ?", 
+                                    (target["file_id"],)
+                                ).fetchone()
+                                
+                                if is_referenced:
+                                    matched_target = target
+                    except Exception:
+                        pass # Hash fail -> treat as new
+                
+                if matched_target:
+                    # Execute Rename
+                    self._execute_rename(root_id, matched_target, rel_path, root_path, stat)
+                    processed_missing_ids.add(matched_target["file_id"])
+                    stats.updated += 1
+                else:
+                    # Insert New
+                    self._upsert_file(root_id, root_path, rel_path, stat, None, force_hash)
+                    stats.added += 1
+
+            # Handle True Deletions
+            for m in missing_files:
+                if m["file_id"] not in processed_missing_ids:
+                    self.db.execute("DELETE FROM files WHERE file_id = ?", (m["file_id"],))
                     stats.removed += 1
             
             self.db.commit()
@@ -314,6 +355,62 @@ class IndexService:
             stats.errors += 1
             
         return stats
+
+    def _resolve_rename_ambiguity(self, candidates: list[dict], rel_path: str) -> dict | None:
+        """Resolve multiple rename candidates."""
+        if len(candidates) == 1:
+            return candidates[0]
+        
+        # Heuristic 1: Same Parent Directory
+        parent = str(Path(rel_path).parent)
+        same_parent = [c for c in candidates if str(Path(c["rel_path"]).parent) == parent]
+        if len(same_parent) == 1:
+            return same_parent[0]
+            
+        if not same_parent: # Only check extension if no parent match found
+            # Heuristic 2: Same Extension
+            ext = Path(rel_path).suffix
+            same_ext = [c for c in candidates if Path(c["rel_path"]).suffix == ext]
+            if len(same_ext) == 1:
+                return same_ext[0]
+        
+        # Still ambiguous -> Do nothing (safe fallback)
+        return None
+
+    def _execute_rename(self, root_id: str, old_file: dict, new_rel_path: str, root_path: Path, stat: Any) -> None:
+        """Update DB for a detected rename."""
+        file_id = old_file["file_id"]
+        # Use existing canonical path if available (preferred), or reconstruct from rel_path
+        old_canonical = old_file.get("canonical_path") or str(root_path / old_file["rel_path"])
+        new_canonical = str(root_path / new_rel_path)
+        
+        # 1. Update Files Table
+        self.db.execute(
+            """
+            UPDATE files 
+            SET canonical_path = ?, rel_path = ?, last_seen_at = ?, mtime_ns = ?, size = ?
+            WHERE file_id = ?
+            """,
+            (new_canonical, new_rel_path, utcnow_iso(), stat.mtime_ns, stat.size, file_id)
+        )
+        
+        # 2. Add Alias
+        self.db.execute(
+            """
+            INSERT INTO file_aliases (alias_id, file_id, old_canonical_path, new_canonical_path)
+            VALUES (?, ?, ?, ?)
+            ON CONFLICT(file_id, old_canonical_path) DO NOTHING
+            """,
+            (str(uuid.uuid4()), file_id, old_canonical, new_canonical)
+        )
+        
+        # 3. Update References (Denormalized Cache)
+        self.db.execute(
+            "UPDATE refs SET canonical_path = ? WHERE file_id = ?",
+            (new_canonical, file_id)
+        )
+        
+        logger.info(f"Detected rename: {old_file['rel_path']} -> {new_rel_path} (ID: {file_id})")
 
     def _upsert_file(
         self, 
