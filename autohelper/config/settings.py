@@ -46,6 +46,12 @@ class Settings(BaseSettings):
     mail_output_path: Path = Field(default_factory=lambda: Path(Path.home() / "OneDrive" / "Emails"))
     mail_ingest_path: Path = Field(default_factory=lambda: Path(Path.home() / "Documents" / "AutoHelper" / "Ingest"))
     
+    # Context Layer / External Data Sources
+    autoart_api_url: str = "http://localhost:3000"
+    autoart_api_key: str = ""  # Optional API key for AutoArt
+    monday_api_token: str = ""  # Monday.com API token (secret)
+    context_providers: list[str] = Field(default=["autoart", "monday"])  # Priority order
+    
     def get_allowed_roots(self) -> list[Path]:
         """Parse and validate allowed root paths."""
         return [Path(r).resolve() for r in self.allowed_roots if r]

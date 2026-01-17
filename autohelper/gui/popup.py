@@ -324,7 +324,33 @@ def get_window_class():
             
             layout.addWidget(status_grp)
             
-            # 2. Ingestion Section
+            # 2. Monday Context Section
+            context_grp = QFrame()
+            context_grp.setStyleSheet("background: white; border: 1px solid #eceff1; border-radius: 4px;")
+            c_layout = QVBoxLayout(context_grp)
+            
+            c_layout.addWidget(QLabel("Monday.com Integration"))
+            
+            row_token = QHBoxLayout()
+            row_token.addWidget(QLabel("API Token:"))
+            self.txt_monday_token = QLineEdit()
+            self.txt_monday_token.setPlaceholderText("Enter Monday.com API token...")
+            self.txt_monday_token.setEchoMode(QLineEdit.Password)  # Hide token
+            self.txt_monday_token.setText(self.current_config.get("monday_api_token", ""))
+            row_token.addWidget(self.txt_monday_token)
+            c_layout.addLayout(row_token)
+            
+            self.lbl_context_status = QLabel("Not connected")
+            self.lbl_context_status.setStyleSheet("color: #90a4ae; font-style: italic;")
+            c_layout.addWidget(self.lbl_context_status)
+            
+            btn_test_context = QPushButton("Test Connection")
+            btn_test_context.clicked.connect(self.test_monday_connection)
+            c_layout.addWidget(btn_test_context)
+            
+            layout.addWidget(context_grp)
+            
+            # 3. Ingestion Section
             ingest_grp = QFrame()
             ingest_grp.setStyleSheet("background: white; border: 1px solid #eceff1; border-radius: 4px;")
             i_layout = QVBoxLayout(ingest_grp)
@@ -344,6 +370,33 @@ def get_window_class():
             # Connect change signals to enable save
             self.chk_mail_enabled.stateChanged.connect(lambda: self.btn_save.setEnabled(True))
             self.spin_mail_interval.valueChanged.connect(lambda: self.btn_save.setEnabled(True))
+            self.txt_monday_token.textChanged.connect(lambda: self.btn_save.setEnabled(True))
+        
+        def test_monday_connection(self):
+            """Test the Monday.com API connection."""
+            token = self.txt_monday_token.text().strip()
+            if not token:
+                self.lbl_context_status.setText("No token provided")
+                self.lbl_context_status.setStyleSheet("color: #ffa000;")
+                return
+            
+            self.lbl_context_status.setText("Testing...")
+            self.lbl_context_status.setStyleSheet("color: #2196f3;")
+            QApplication.processEvents()  # Force UI update
+            
+            try:
+                from autohelper.modules.context.monday import MondayClient, MondayClientError
+                client = MondayClient(token=token)
+                user = client.get_me()
+                name = user.get("name", "Unknown")
+                self.lbl_context_status.setText(f"✓ Connected as {name}")
+                self.lbl_context_status.setStyleSheet("color: #4caf50;")
+            except MondayClientError as e:
+                self.lbl_context_status.setText(f"✗ {str(e)[:40]}...")
+                self.lbl_context_status.setStyleSheet("color: #d32f2f;")
+            except Exception as e:
+                self.lbl_context_status.setText(f"✗ Error: {str(e)[:40]}")
+                self.lbl_context_status.setStyleSheet("color: #d32f2f;")
 
         def ingest_pst_dialog(self):
             path, _ = QFileDialog.getOpenFileName(self, "Select Outlook Data File", "", "Outlook Files (*.pst *.ost)")
@@ -480,7 +533,8 @@ def get_window_class():
                 "allowed_roots": valid_roots,
                 "excludes": self.current_config.get("excludes", []),
                 "mail_enabled": self.chk_mail_enabled.isChecked(),
-                "mail_poll_interval": self.spin_mail_interval.value()
+                "mail_poll_interval": self.spin_mail_interval.value(),
+                "monday_api_token": self.txt_monday_token.text().strip(),
             }
             try:
                 self.config_store.save(new_config)
@@ -493,6 +547,16 @@ def get_window_class():
                 # API check: Can we signal re-init?
                 from autohelper.config.settings import reset_settings
                 reset_settings()
+                
+                # Reinitialize context service with new token
+                try:
+                    from autohelper.modules.context.service import get_context_service
+                    ctx_svc = get_context_service()
+                    ctx_svc.reinit_clients()
+                    # Trigger a background refresh
+                    ctx_svc.refresh()
+                except Exception as e:
+                    print(f"Context service reinit warning: {e}")
                 
                 # Toggle mail service based on new config
                 from autohelper.modules.mail import MailService

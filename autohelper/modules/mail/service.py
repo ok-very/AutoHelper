@@ -78,6 +78,9 @@ def extract_project_info(subject: str) -> Tuple[str, str, str]:
     Extract developer, project name, and topic from subject.
     Pattern: "Developer - Project - Topic"
     Returns: (developer, project_name, full_project_id)
+    
+    Uses ContextService for dynamic developer list if available,
+    otherwise falls back to KNOWN_DEVELOPERS static list.
     """
     cleaned = clean_subject(subject)
     
@@ -90,8 +93,19 @@ def extract_project_info(subject: str) -> Tuple[str, str, str]:
         developer = parts[0]
         project = parts[1]
         
+        # Try to get developers from ContextService
+        known_developers = KNOWN_DEVELOPERS  # Default fallback
+        try:
+            from autohelper.modules.context.service import get_context_service
+            ctx = get_context_service()
+            dynamic_developers = ctx.get_developers()
+            if dynamic_developers:
+                known_developers = dynamic_developers
+        except Exception:
+            pass  # Use fallback
+        
         # Validate developer is known
-        developer_matched = any(dev.lower() in developer.lower() for dev in KNOWN_DEVELOPERS)
+        developer_matched = any(dev.lower() in developer.lower() for dev in known_developers)
         
         if developer_matched:
             full_project_id = f"{developer} - {project}"
