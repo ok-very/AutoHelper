@@ -18,6 +18,8 @@ from autohelper.db.migrate import run_migrations
 # Import routers
 from autohelper.modules.health.router import router as health_router
 from autohelper.modules.index.router import router as index_router
+from autohelper.modules.search.router import router as search_router
+from autohelper.modules.reference.router import router as ref_router
 from autohelper.shared.errors import AutoHelperError
 from autohelper.shared.ids import generate_request_id
 from autohelper.shared.logging import (
@@ -115,7 +117,7 @@ def build_app(settings: Settings | None = None) -> FastAPI:
         request: Request, exc: AutoHelperError
     ) -> JSONResponse:
         """Handle AutoHelperError with consistent JSON response."""
-        ctx = request.state.get("context") if hasattr(request, "state") else None
+        ctx = getattr(request.state, "context", None)
         
         return JSONResponse(
             status_code=exc.http_status,
@@ -130,6 +132,8 @@ def build_app(settings: Settings | None = None) -> FastAPI:
     # Register routers
     app.include_router(health_router, tags=["health"])
     app.include_router(index_router)
+    app.include_router(search_router)
+    app.include_router(ref_router)
     
     # Root endpoint
     @app.get("/")

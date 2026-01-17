@@ -1,6 +1,5 @@
-"""Index module - filesystem crawling and indexing."""
+"""
+Index module - file crawling and metadata extraction.
+"""
 
-from .router import router
-from .service import IndexService
-
-__all__ = ["router", "IndexService"]
+__all__ = []
