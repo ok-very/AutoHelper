@@ -233,7 +233,7 @@ class IndexService:
     def get_status(self) -> dict:
         """Get current index status."""
         running = self._run_repo.get_running()
-        last = self._run_repo.get_latest()
+        last_completed = self._run_repo.get_last_completed()
         roots = self._root_repo.list_all()
         
         total_files = sum(
@@ -244,7 +244,7 @@ class IndexService:
         return {
             "is_running": running is not None,
             "current_run": running,
-            "last_completed": last if last and last["status"] != "running" else None,
+            "last_completed": last_completed,
             "total_roots": len(roots),
             "total_files": total_files,
         }

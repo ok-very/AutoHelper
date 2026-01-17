@@ -76,6 +76,22 @@ class IndexRunRepository:
                 result["stats"] = json.loads(result["stats_json"])
             return result
         return None
+
+    def get_last_completed(self) -> dict | None:
+        """Get most recent completed index run."""
+        db = get_db()
+        cursor = db.execute(
+            """SELECT * FROM index_runs 
+            WHERE status = ? ORDER BY finished_at DESC, started_at DESC LIMIT 1""",
+            (IndexRunStatus.COMPLETED.value,),
+        )
+        row = cursor.fetchone()
+        if row:
+            result = dict(row)
+            if result.get("stats_json"):
+                result["stats"] = json.loads(result["stats_json"])
+            return result
+        return None
     
     def get_running(self) -> dict | None:
         """Get currently running index run if any."""

@@ -192,6 +192,40 @@ class TestIndexService:
         assert status["is_running"] is True
         assert status["current_run"] is not None
         assert status["current_run"]["status"] == "running"
+        assert status["last_completed"] is None
+
+    def test_status_with_running_and_completed(
+        self, client: TestClient, temp_dir: Path, test_db
+    ) -> None:
+        """Get status should show both running and last completed run."""
+        from autohelper.db import get_db
+        from autohelper.shared.ids import generate_index_run_id
+        
+        db = get_db()
+        
+        # Insert a completed run
+        completed_id = generate_index_run_id()
+        db.execute(
+            "INSERT INTO index_runs (index_run_id, kind, status, started_at, finished_at) VALUES (?, ?, ?, ?, ?)",
+            (completed_id, "full", "completed", "2023-01-01T00:00:00", "2023-01-01T00:01:00"),
+        )
+        
+        # Insert a running run (started later)
+        running_id = generate_index_run_id()
+        db.execute(
+            "INSERT INTO index_runs (index_run_id, kind, status, started_at) VALUES (?, ?, ?, ?)",
+            (running_id, "full", "running", "2023-01-01T10:00:00"),
+        )
+        db.commit()
+        
+        service = IndexService()
+        status = service.get_status()
+        
+        assert status["is_running"] is True
+        assert status["current_run"] is not None
+        assert status["current_run"]["index_run_id"] == running_id
+        assert status["last_completed"] is not None
+        assert status["last_completed"]["index_run_id"] == completed_id
 
     def test_rebuild_conflict_raises_conflict_error(
         self, client: TestClient, temp_dir: Path, test_db
