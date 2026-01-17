@@ -21,13 +21,12 @@ from autohelper.shared.types import IndexRunStatus, RequestContext
 
 from .schemas import IndexStats, RunResponse
 from .types import ScanResult
+from autohelper.shared.time import utcnow_iso
 
 logger = get_logger(__name__)
 
 
-def utcnow_iso() -> str:
-    """Get current UTC time in ISO format."""
-    return datetime.now(timezone.utc).isoformat()
+
 
 
 class IndexService:
@@ -51,15 +50,34 @@ class IndexService:
         run_id = generate_index_run_id()
         start_time = time.time()
         
-        # 1. Create run record
-        self.db.execute(
-            """
-            INSERT INTO index_runs (index_run_id, kind, started_at, status)
-            VALUES (?, ?, ?, ?)
-            """,
-            (run_id, "full", utcnow_iso(), IndexRunStatus.RUNNING)
-        )
-        self.db.commit()
+        # 1. Create run record with concurrency guard
+        # Use a transaction to ensure no other running job exists.
+        # Since sqlite isolation can be tricky, we can use a conditional insert or check first in transaction.
+        # Ideally, we rely on a UNIQUE index on 'running' status, but status changes.
+        # So we check for existence of 'running' status inside a transaction.
+        
+        try:
+            # Check if any run is currently running
+            existing = self.db.execute(
+                "SELECT index_run_id FROM index_runs WHERE status = ?", 
+                (IndexRunStatus.RUNNING,)
+            ).fetchone()
+            
+            if existing:
+                from autohelper.shared.errors import ConflictError
+                raise ConflictError(message="Index run already in progress", resource_id=existing["index_run_id"])
+            
+            self.db.execute(
+                """
+                INSERT INTO index_runs (index_run_id, kind, started_at, status)
+                VALUES (?, ?, ?, ?)
+                """,
+                (run_id, "full", utcnow_iso(), IndexRunStatus.RUNNING)
+            )
+            self.db.commit()
+        except Exception:
+            self.db.rollback()
+            raise
         
         try:
             # 2. Determine roots to scan

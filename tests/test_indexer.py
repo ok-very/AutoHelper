@@ -35,6 +35,64 @@ class TestIndexService:
         db = get_db()
         files = db.execute("SELECT count(*) as c FROM files").fetchone()["c"]
         assert files >= 3
+
+    def test_rebuild_with_specific_root_id(
+        self, client: TestClient, temp_dir: Path, test_db
+    ) -> None:
+        """rebuild_index(specific_root_id=...) only indexes the requested root."""
+        # Create two roots
+        root1_path = temp_dir / "root1"
+        root1_path.mkdir()
+        (root1_path / "file1.txt").write_text("root1")
+        
+        root2_path = temp_dir / "root2"
+        root2_path.mkdir()
+        (root2_path / "file2.txt").write_text("root2")
+        
+        # Register both roots manually (since test_settings only has one allowed root usually)
+        # But we need to add them to DB. 
+        # Note: IndexService uses PathPolicy(settings.allowed_roots). 
+        # If we want to scan multiple roots, they must be in allowed_roots or subdirs of it.
+        # Temp dir IS the allowed root in tests. So root1 and root2 are subdirs.
+        # But we want them to be registered as separate Roots in db.
+        
+        from autohelper.shared.ids import generate_root_id
+        db = get_db()
+        r1_id = generate_root_id()
+        r2_id = generate_root_id()
+        
+        db.execute("INSERT INTO roots (root_id, path, enabled) VALUES (?, ?, 1)", (r1_id, str(root1_path)))
+        db.execute("INSERT INTO roots (root_id, path, enabled) VALUES (?, ?, 1)", (r2_id, str(root2_path)))
+        db.commit()
+        
+        service = IndexService()
+        # Mock policy to allow these new roots if strictly validated?
+        # The service uses: self.policy = PathPolicy(self.settings.get_allowed_roots())
+        # In test_settings, allowed_roots=[temp_dir].
+        # root1_path is relative to temp_dir, so it is allowed?
+        # Actually PathPolicy roots are top level.
+        # But let's see if we can just run it. The service checks `roots` table.
+        # The service loops over `roots` table.
+        
+        # Act: rebuild index only for root1
+        service.rebuild_index(specific_root_id=r1_id)
+        
+        # Assert
+        files_r1 = db.execute("SELECT count(*) as c FROM files WHERE root_id = ?", (r1_id,)).fetchone()["c"]
+        files_r2 = db.execute("SELECT count(*) as c FROM files WHERE root_id = ?", (r2_id,)).fetchone()["c"]
+        
+        assert files_r1 >= 1
+        assert files_r2 == 0, "Root 2 should NOT be scanned"
+
+    def test_rebuild_with_specific_root_id_not_found(
+        self, client: TestClient, temp_dir: Path, test_db
+    ) -> None:
+        """rebuild_index with invalid root_id raises NotFound (404 via API)."""
+        service = IndexService()
+        from autohelper.shared.errors import NotFoundError
+        
+        with pytest.raises(NotFoundError):
+            service.rebuild_index(specific_root_id="bad_id")
     
     def test_rebuild_indexes_files(
         self, client: TestClient, temp_dir: Path, test_db
@@ -84,7 +142,27 @@ class TestIndexService:
         self, client: TestClient, temp_dir: Path, test_db
     ) -> None:
         """Standard rebuild should NOT hash large files unless forced."""
-        pass
+        test_file = temp_dir / "large_file.txt"
+        # 1MB + 1 byte
+        content = "x" * (1_000_000 + 1)
+        test_file.write_text(content)
+
+        service = IndexService()
+        service.rebuild_index()
+
+        db = get_db()
+        canonical = str(test_file.resolve())
+        row = db.execute("SELECT content_hash FROM files WHERE canonical_path = ?", (canonical,)).fetchone()
+        if not row:
+             row = db.execute("SELECT content_hash FROM files WHERE lower(canonical_path) = lower(?)", (canonical,)).fetchone()
+        
+        assert row is not None
+        assert row["content_hash"] is None, "Large file should not be hashed by default"
+
+        # Force hash
+        service.rebuild_index(force_hash=True)
+        row = db.execute("SELECT content_hash FROM files WHERE canonical_path = ? OR lower(canonical_path) = lower(?)", (canonical, canonical)).fetchone()
+        assert row["content_hash"] is not None, "Large file SHOULD be hashed when forced"
     
     def test_rebuild_handles_nested_dirs(
         self, client: TestClient, temp_dir: Path, test_db
