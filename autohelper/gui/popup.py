@@ -1,381 +1,894 @@
 import os
 import threading
 import sys
-from typing import Optional, Any
+import colorsys
+import time
+import colorsys
+import threading
 
-# Set Kivy environment variables to prevent early window creation/console logging
-os.environ['KIVY_NO_CONSOLELOG'] = '1'
-os.environ['KIVY_NO_ARGS'] = '1'
+# Set environment to allow GUI execution
+os.environ['QT_API'] = 'pyside6'
 
-# Lazy loaded modules
-App = None
-BoxLayout = None
-Label = None
-TextInput = None
-Button = None
-Window = None
-Config = None
-ScrollView = None
-GridLayout = None
+# Lazy Imports
+QApplication = None
+QWidget = None
+QVBoxLayout = None
+QHBoxLayout = None
+QLabel = None
+QPushButton = None
+QPlainTextEdit = None
+QLineEdit = None
+QProgressBar = None
+QFileDialog = None
+QThread = None
+Signal = None
+Qt = None
+QTimer = None
+QScreen = None
+QColor = None
+QTabWidget = None
+QListWidget = None
+QListWidgetItem = None
+QComboBox = None
+QMessageBox = None
+QFrame = None
+QScrollArea = None
 
-def _ensure_kivy_imported():
-    """Import Kivy modules on demand."""
-    global App, BoxLayout, Label, TextInput, Button, Window, Config, ScrollView, GridLayout
-    if App is not None:
+QMenu = None
+QSystemTrayIcon = None
+QAction = None
+QStyle = None
+QIcon = None
+QEvent = None
+
+def _ensure_qt_imported():
+    """Import PySide6 modules on demand."""
+    global QApplication, QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushButton, QPlainTextEdit, QLineEdit, QProgressBar, QFileDialog, QThread, Signal, Qt, QTimer, QScreen, QColor, QSystemTrayIcon, QMenu, QAction, QStyle, QIcon, QEvent, QTabWidget, QListWidget, QListWidgetItem, QComboBox, QMessageBox, QFrame, QScrollArea
+    if QApplication is not None:
         return True
-        
+    
     try:
-        from kivy.app import App
-        from kivy.uix.boxlayout import BoxLayout
-        from kivy.uix.gridlayout import GridLayout
-        from kivy.uix.scrollview import ScrollView
-        from kivy.uix.label import Label
-        from kivy.uix.textinput import TextInput
-        from kivy.uix.button import Button
-        from kivy.core.window import Window
-        from kivy.config import Config
+        from PySide6.QtWidgets import (QApplication, QWidget, QVBoxLayout, QHBoxLayout, 
+                                     QLabel, QPushButton, QPlainTextEdit, QLineEdit, 
+                                     QProgressBar, QFileDialog, QSystemTrayIcon, QMenu, QStyle,
+                                     QTabWidget, QListWidget, QListWidgetItem, QComboBox, QMessageBox,
+                                     QFrame, QScrollArea)
+        from PySide6.QtCore import QThread, Signal, Qt, QTimer, QEvent
+        from PySide6.QtGui import QScreen, QColor, QAction, QIcon
         return True
     except ImportError:
-        print("Warning: Kivy not installed. GUI features unavailable.")
+        print("Warning: PySide6 not installed. install with `pip install PySide6`")
         return False
 
-class ConfigLayout(object): # Placeholder until instantiated
+# --- WORKER THREAD ---
+
+class WorkerThread(object): 
+    # Placeholder for safe class creation before import
     pass
 
-def get_config_layout_class():
-    if not _ensure_kivy_imported():
-        return None
+def get_worker_class():
+    if not _ensure_qt_imported(): return object
+    
+    class Worker(QThread):
+        finished = Signal(bool, str) # success, message
 
-    class InternalConfigLayout(BoxLayout):
-        def __init__(self, app_instance, **kwargs):
-            super().__init__(**kwargs)
-            self.app = app_instance
-            self.orientation = 'vertical'
-            self.padding = 20
-            self.spacing = 15
+        def __init__(self, func, parent=None):
+            super().__init__(parent)
+            self.func = func
+
+        def run(self):
+            try:
+                # Artificial delay for UX visibility
+                time.sleep(0.5)
+                self.func()
+                time.sleep(0.5)
+                self.finished.emit(True, "Done")
+            except Exception as e:
+                self.finished.emit(False, str(e))
+    return Worker
+
+# --- MAIN WINDOW ---
+
+class ConfigWindow(object):
+    pass
+
+def get_window_class():
+    if not _ensure_qt_imported(): return object
+
+    Worker = get_worker_class()
+
+    class ConfigWindow(QWidget):
+        def __init__(self):
+            super().__init__()
+            self.setWindowTitle("AutoHelper Service")
+            self.resize(300, 500)
             
-            # Imports inside method to avoid early dependency issues if they use global state
+            # --- STYLING ---
+            # Apply Material Theme (Light)
+            from qt_material import apply_stylesheet
+            try:
+                app = QApplication.instance()
+                apply_stylesheet(app, theme='light_blue.xml')
+            except Exception as e:
+                print(f"Theme warning: {e}")
+
+            # Technical / Monospace Styling overrides
+            self.setStyleSheet(self.styleSheet() + """
+                ConfigWindow {
+                    font-family: 'Consolas', 'Monaco', monospace;
+                    font-size: 11px;
+                }
+                QLabel {
+                    font-family: 'Consolas', 'Monaco', monospace;
+                }
+                QLabel#HEADER {
+                    font-weight: bold;
+                    font-size: 12px;
+                }
+                QLabel#STAT_KEY {
+                    color: #546e7a;
+                }
+                QLabel#STAT_VAL {
+                    font-weight: bold;
+                    color: #263238;
+                }
+                QPushButton {
+                    text-transform: uppercase;
+                    font-weight: bold;
+                    border-radius: 2px;
+                }
+                QTabWidget::pane {
+                    border: 1px solid #cfd8dc;
+                    top: -1px; 
+                }
+                QTabBar::tab {
+                    font-family: 'Segoe UI', sans-serif; /* Keep tabs readable */
+                    font-size: 11px;
+                    padding: 6px 10px;
+                }
+                QListWidget {
+                    font-family: 'Consolas', 'Monaco', monospace;
+                    font-size: 10px;
+                }
+            """)
+            
+            # Frameless & Top
+            self.setWindowFlags(Qt.FramelessWindowHint | Qt.WindowStaysOnTopHint | Qt.Tool)
+            
+            # Data
             from autohelper.config.store import ConfigStore
             self.config_store = ConfigStore()
             self.current_config = self.config_store.load()
+            
+            # Layout
+            self.layout_ui()
+            
+            # Reposition
+            self.align_to_tray()
 
-            # Font selection helper
-            def get_system_font(preferences, fallback=None):
-                """Find first available system font from preferences, downloading if needed."""
-                import os
-                import urllib.request
+        def event(self, event):
+            if event.type() == QEvent.WindowDeactivate:
+                self.hide()
+            return super().event(event)
+            
+        def layout_ui(self):
+            main = QVBoxLayout()
+            main.setContentsMargins(0,0,0,0)
+            main.setSpacing(0)
+            
+            # --- HEADER ---
+            header_frame = QFrame()
+            header_frame.setStyleSheet("background-color: #e3f2fd; border-bottom: 1px solid #b0bec5;")
+            header_layout = QHBoxLayout(header_frame)
+            header_layout.setContentsMargins(10, 8, 10, 8)
+            
+            self.status_dot = QLabel("●")
+            self.status_dot.setStyleSheet("color: #4caf50; font-size: 14px;") # Green
+            
+            lbl_title = QLabel("AutoHelper Service")
+            lbl_title.setObjectName("HEADER")
+            
+            btn_close = QPushButton("×")
+            btn_close.setFixedSize(20, 20)
+            btn_close.setFlat(True)
+            btn_close.clicked.connect(self.hide)
+            
+            header_layout.addWidget(self.status_dot)
+            header_layout.addWidget(lbl_title)
+            header_layout.addStretch()
+            header_layout.addWidget(btn_close)
+            
+            main.addWidget(header_frame)
+            
+            # --- TABS ---
+            self.tabs = QTabWidget()
+            
+            # Tab 1: Dashboard
+            self.tab_dashboard = QWidget()
+            self.setup_dashboard_tab()
+            self.tabs.addTab(self.tab_dashboard, "Status")
+            
+            # Tab 2: Roots
+            self.tab_roots = QWidget()
+            self.setup_roots_tab()
+            self.tabs.addTab(self.tab_roots, "Roots")
+            
+            # Tab 3: Advanced
+            self.tab_advanced = QWidget()
+            self.setup_advanced_tab()
+            self.tabs.addTab(self.tab_advanced, "Adv.")
+            
+            main.addWidget(self.tabs)
+            
+            # --- FOOTER ---
+            footer_frame = QFrame()
+            footer_frame.setStyleSheet("background-color: #f5f5f5; border-top: 1px solid #e0e0e0;")
+            footer_layout = QHBoxLayout(footer_frame)
+            footer_layout.setContentsMargins(10, 8, 10, 8)
+            
+            self.btn_save = QPushButton("Save & Restart")
+            self.btn_save.setEnabled(False) # Enable on change
+            self.btn_save.clicked.connect(self.save_config)
+            
+            footer_layout.addWidget(self.btn_save)
+            main.addWidget(footer_frame)
+            
+            self.setLayout(main)
+
+        def setup_dashboard_tab(self):
+            layout = QVBoxLayout(self.tab_dashboard)
+            layout.setContentsMargins(15, 15, 15, 15)
+            layout.setSpacing(15)
+            
+            # Metrics
+            metrics = QFrame()
+            metrics.setStyleSheet("background: white; border: 1px solid #eceff1; border-radius: 4px;")
+            m_layout = QVBoxLayout(metrics)
+            
+            def add_stat(key, val):
+                row = QHBoxLayout()
+                k = QLabel(key)
+                k.setObjectName("STAT_KEY")
+                v = QLabel(val)
+                v.setObjectName("STAT_VAL")
+                row.addWidget(k)
+                row.addStretch()
+                row.addWidget(v)
+                m_layout.addLayout(row)
+                return v
                 
-                font_dirs = [os.path.join(os.environ.get('WINDIR', 'C:\\Windows'), 'Fonts')]
+            from autohelper.config import get_settings
+            s = get_settings()
+            
+            add_stat("Service Port:", str(s.port))
+            self.lbl_db_stat = add_stat("Database:", "Connected")
+            self.lbl_idx_stat = add_stat("Indexed Files:", "...")
+            
+            layout.addWidget(metrics)
+            
+            # Actions
+            layout.addWidget(QLabel("Index Operations"))
+            
+            btn_scan = QPushButton("Incremental Rescan")
+            btn_scan.clicked.connect(self.start_scan)
+            layout.addWidget(btn_scan)
+            
+            btn_rebuild = QPushButton("Full Ingestion (Rebuild)")
+            btn_rebuild.setStyleSheet("color: #d32f2f;") # Red warning text
+            btn_rebuild.clicked.connect(self.confirm_rebuild)
+            layout.addWidget(btn_rebuild)
+            
+            self.progress = QProgressBar()
+            self.progress.setVisible(False)
+            self.progress.setFixedHeight(4)
+            layout.addWidget(self.progress)
+            
+            self.lbl_op_status = QLabel("Ready")
+            self.lbl_op_status.setAlignment(Qt.AlignCenter)
+            self.lbl_op_status.setStyleSheet("color: #90a4ae;")
+            layout.addWidget(self.lbl_op_status)
+            
+            layout.addStretch()
+            
+            # Update Stats immediately
+            self.refresh_stats()
+
+        def setup_roots_tab(self):
+            layout = QVBoxLayout(self.tab_roots)
+            layout.setContentsMargins(10, 10, 10, 10)
+            
+            info = QLabel("⚠ Only checked paths are indexed.")
+            info.setStyleSheet("color: #ffa000; font-style: italic;")
+            layout.addWidget(info)
+            
+            self.list_roots = QListWidget()
+            self.list_roots.setSelectionMode(QListWidget.NoSelection) # Use checkboxes
+            
+            layout.addWidget(self.list_roots)
+            
+            # Populate
+            for root in self.current_config.get("allowed_roots", []):
+                item = QListWidgetItem(root)
+                item.setFlags(item.flags() | Qt.ItemIsUserCheckable)
+                item.setCheckState(Qt.Checked)
+                self.list_roots.addItem(item)
                 
-                # Check for cached fonts in ./data/fonts
-                cache_dir = os.path.join(os.getcwd(), 'data', 'fonts')
-                if os.path.exists(cache_dir):
-                    font_dirs.insert(0, cache_dir)
+            btns = QHBoxLayout()
+            btn_add = QPushButton("+ Add Path")
+            btn_add.clicked.connect(self.add_root)
+            
+            btn_rem = QPushButton("- Remove Unchecked")
+            btn_rem.clicked.connect(self.remove_unchecked_roots)
+            
+            btns.addWidget(btn_add)
+            btns.addWidget(btn_rem)
+            layout.addLayout(btns)
+            
+        def setup_advanced_tab(self):
+            layout = QVBoxLayout(self.tab_advanced)
+            layout.setContentsMargins(15, 15, 15, 15)
+            
+            from autohelper.config import get_settings
+            s = get_settings()
+            
+            def add_row(key, val):
+                l = QLabel(key)
+                l.setStyleSheet("color: #78909c; font-weight: bold;")
+                layout.addWidget(l)
+                v = QLineEdit(str(val))
+                v.setReadOnly(True) # Env vars are read only here
+                v.setStyleSheet("background: #fcfcfc; color: #546e7a;")
+                layout.addWidget(v)
                 
-                # Map common names to probable filenames AND remote URLs
-                font_map = {
-                    'calibri': {'files': ['calibri.ttf', 'calibriz.ttf']}, 
-                    'carlito': {
-                        'files': ['carlito.ttf', 'Carlito-Regular.ttf'],
-                        'url': 'https://github.com/google/fonts/raw/main/ofl/carlito/Carlito-Regular.ttf'
-                    },
-                    'arial': {'files': ['arial.ttf']},
-                    'consolas': {'files': ['consola.ttf']},
-                    'courier new': {'files': ['cour.ttf']},
-                }
+            add_row("Host", s.host)
+            add_row("CORS Origins", ",".join(s.cors_origins))
+            add_row("DB Path", s.db_path)
+            
+            layout.addStretch()
 
-                for font_name in preferences:
-                    font_name_lower = font_name.lower()
-                    info = font_map.get(font_name_lower)
-                    
-                    if not info:
-                         filenames = [f"{font_name}.ttf"]
-                         url = None
-                    else:
-                        filenames = info['files']
-                        url = info.get('url')
-                    
-                    # 1. Check local existence
-                    for fname in filenames:
-                        for fdir in font_dirs:
-                            fpath = os.path.join(fdir, fname)
-                            if os.path.exists(fpath):
-                                return fpath
-                    
-                    # 2. Try download if URL exists (only for Carlito in this request)
-                    if url:
-                        try:
-                            if not os.path.exists(cache_dir):
-                                os.makedirs(cache_dir, exist_ok=True)
-                            
-                            # Use the first filename as target
-                            target_name = filenames[0] 
-                            target_path = os.path.join(cache_dir, target_name)
-                            
-                            # Double check if it exists in cache now (race condition or simple check)
-                            if os.path.exists(target_path):
-                                return target_path
-
-                            print(f"Downloading font {font_name} from {url}...")
-                            # Simple synchronous download - fine for startup of this popup
-                            urllib.request.urlretrieve(url, target_path)
-                            
-                            if os.path.exists(target_path):
-                                return target_path
-                        except Exception as e:
-                            print(f"Failed to download font {font_name}: {e}")
-                
-                return fallback
-
-            # User Preferences: Calibri (> Carlito w/ download) > Arial
-            self.label_font = get_system_font(['calibri', 'carlito', 'arial'], fallback='Arial') 
+        def refresh_stats(self):
+            # Quick async check of DB/Index
+            def _check():
+                try:
+                    from autohelper.db import get_db
+                    # Just count files
+                    db = get_db()
+                    count = db.execute("SELECT count(*) FROM files").fetchone()[0]
+                    return True, count
+                except:
+                    return False, 0
             
-            # Input preference: Consolas > Courier New
-            self.input_font = get_system_font(['consolas', 'courier new'], fallback='Consolas') 
-            
-            # Use found fonts
-            label_font = self.label_font
-            input_font = self.input_font
-            
-            # --- Header ---
-            header = BoxLayout(size_hint_y=None, height=40)
-            title = Label(
-                text="AutoHelper Settings", 
-                font_name=label_font,
-                font_size='22sp', 
-                bold=True,
-                halign='left',
-                valign='middle',
-                text_size=(250, None) # Constraints for alignment
-            )
-            close_btn = Button(text="X", size_hint_x=None, width=40, background_color=(0.8, 0.2, 0.2, 1))
-            close_btn.bind(on_press=self.cancel)
-            
-            header.add_widget(title)
-            header.add_widget(close_btn)
-            self.add_widget(header)
-
-            # --- Scrollable Content ---
-            scroll = ScrollView(size_hint=(1, 1), do_scroll_x=False)
-            content = BoxLayout(orientation='vertical', size_hint_y=None, spacing=15)
-            content.bind(minimum_height=content.setter('height'))
-
-            # Root Directories
-            content.add_widget(Label(
-                text="Allowed Roots (one per line):", 
-                font_name=label_font, 
-                size_hint_y=None, height=25, 
-                halign='left', text_size=(310, None)
-            ))
-            
-            roots_text = "\n".join(self.current_config.get("allowed_roots", []))
-            self.roots_input = TextInput(
-                text=roots_text, 
-                multiline=True, 
-                size_hint_y=None, 
-                height=100,
-                font_name=input_font,
-                font_size='13sp',
-                background_color=(0.95, 0.95, 0.95, 1)
-            )
-            content.add_widget(self.roots_input)
-
-            # Excluded Extensions
-            content.add_widget(Label(
-                text="Excluded Extensions (csv):", 
-                font_name=label_font, 
-                size_hint_y=None, height=25, 
-                halign='left', text_size=(310, None)
-            ))
-            
-            excludes_text = ", ".join(self.current_config.get("excludes", []))
-            self.exclude_input = TextInput(
-                text=excludes_text, 
-                multiline=False, 
-                size_hint_y=None, 
-                height=35,
-                font_name=input_font,
-                font_size='13sp'
-            )
-            content.add_widget(self.exclude_input)
-
-            # Status Section
-            self.status_label = Label(
-                text="Status: Ready", 
-                font_name=input_font,
-                size_hint_y=None, 
-                height=30, 
-                color=(0.6, 0.6, 0.6, 1)
-            )
-            content.add_widget(self.status_label)
-            
-            scroll.add_widget(content)
-            self.add_widget(scroll)
-
-            # --- Actions ---
-            # Index Management
-            action_label = Label(text="Index Operations:", font_name=label_font, size_hint_y=None, height=25, halign='left', text_size=(310, None))
-            self.add_widget(action_label)
-            
-            idx_actions = BoxLayout(size_hint_y=None, height=45, spacing=10)
-            scan_btn = Button(text="Quick Scan", font_name=label_font, background_color=(0.2, 0.7, 0.4, 1))
-            scan_btn.bind(on_press=self.on_scan)
-            
-            rebuild_btn = Button(text="Full Rebuild", font_name=label_font, background_color=(0.2, 0.5, 0.8, 1))
-            rebuild_btn.bind(on_press=self.on_rebuild)
-            
-            idx_actions.add_widget(scan_btn)
-            idx_actions.add_widget(rebuild_btn)
-            self.add_widget(idx_actions)
-
-            # --- Footer ---
-            footer = BoxLayout(size_hint_y=None, height=50, spacing=10, padding=(0, 10, 0, 0))
-            save_btn = Button(
-                text="Save Settings", 
-                font_name=label_font, 
-                bold=True,
-                background_color=(0.3, 0.3, 0.8, 1)
-            )
-            save_btn.bind(on_press=self.save_config)
-            
-            footer.add_widget(save_btn)
-            self.add_widget(footer)
-
-        def _is_font_available(self, font_name):
-            # Kivy Core Label handles font finding, but simpler to rely on defaults 
-            # unless we strictly know the font exists.
-            # Returning False forces fallback to 'Roboto'/'RobotoMono' which Kivy provides.
-            return False 
-
-        def save_config(self, instance):
-            """Validate and save configuration."""
-            raw_roots = self.roots_input.text.strip().split('\n')
-            valid_roots = []
-            
-            # Basic Validation
-            for r in raw_roots:
-                r = r.strip()
-                if not r: 
-                    continue
-                if os.path.exists(r) and os.path.isdir(r):
-                    valid_roots.append(r)
+            def _done(success, val):
+                if success:
+                    self.lbl_db_stat.setText("Connected")
+                    self.lbl_db_stat.setStyleSheet("color: #263238;")
+                    self.lbl_idx_stat.setText(str(val))
                 else:
-                    self.status_label.text = f"Error: Invalid Path '{r}'"
-                    self.status_label.color = (1, 0, 0, 1)
-                    return
+                    self.lbl_db_stat.setText("Error")
+                    self.lbl_db_stat.setStyleSheet("color: #d32f2f;")
+            
+            if hasattr(self, 'stat_worker'):
+                 pass # Already running
+            else:
+                 self.stat_worker = Worker(_check)
+                 self.stat_worker.finished.connect(lambda s,m: _done(s, int(m) if s else 0))
+                 # self.stat_worker.start() # Worker expects string message on finish, adapter needed?
+                 # Custom worker adapter for this simple task
+                 # Re-using standard Worker for now, it sends (bool, str)
+                 # so we can pass count as str
+                 pass
+                 
+            # Note: The provided Worker class in this file is generic (func -> finished(bool, str))
+            # So we wrap _check to return str
+            def _wrapped():
+                s, c = _check()
+                if not s: raise Exception("DB Error")
+                # We can't return value in standard Worker run(), it just calls func().
+                # Modifying Worker or just doing it simple:
+                # Let's just do it synchronously for the popup (DB is local sqlite)
+                # It's fast enough.
+                pass
+            
+            s, c = _check()
+            _done(s, c)
 
-            raw_excludes = self.exclude_input.text.split(',')
-            valid_excludes = [e.strip() for e in raw_excludes if e.strip()]
 
+        def add_root(self):
+            folder = QFileDialog.getExistingDirectory(self, "Select Root Path")
+            if folder:
+                # Check duplicates
+                for i in range(self.list_roots.count()):
+                    if self.list_roots.item(i).text() == folder:
+                        return
+                
+                item = QListWidgetItem(folder)
+                item.setFlags(item.flags() | Qt.ItemIsUserCheckable)
+                item.setCheckState(Qt.Checked)
+                self.list_roots.addItem(item)
+                self.btn_save.setEnabled(True)
+
+        def remove_unchecked_roots(self):
+            for i in range(self.list_roots.count() - 1, -1, -1):
+                if self.list_roots.item(i).checkState() == Qt.Unchecked:
+                    self.list_roots.takeItem(i)
+            self.btn_save.setEnabled(True)
+            
+        def save_config(self):
+            # Gather Roots
+            valid_roots = []
+            for i in range(self.list_roots.count()):
+                item = self.list_roots.item(i)
+                if item.checkState() == Qt.Checked:
+                    valid_roots.append(item.text())
+            
+            # Save
             new_config = {
                 "allowed_roots": valid_roots,
-                "excludes": valid_excludes
+                "excludes": self.current_config.get("excludes", []) 
             }
-            
             try:
                 self.config_store.save(new_config)
-                self.status_label.text = "Settings Saved."
-                self.status_label.color = (0, 1, 0, 1)
                 
-                # Optionally trigger reload here
+                # Feedback
+                self.btn_save.setText("Saved (Restart Required)")
+                self.btn_save.setEnabled(False)
+                
+                # We can't easily auto-restart the uvicorn process from here if running as threaded
+                # API check: Can we signal re-init?
                 from autohelper.config.settings import reset_settings
                 reset_settings()
                 
             except Exception as e:
-                self.status_label.text = f"Save Failed: {str(e)}"
-                self.status_label.color = (1, 0, 0, 1)
+                QMessageBox.critical(self, "Save Error", str(e))
 
-        def on_rebuild(self, instance):
-            self._run_async_action(self._do_rebuild, "Rebuild Started...")
-
-        def on_scan(self, instance):
-            self._run_async_action(self._do_scan, "Scanning...")
-
-        def _run_async_action(self, func, start_msg):
-            self.status_label.text = start_msg
-            self.status_label.color = (1, 1, 0, 1)
-            threading.Thread(target=func, daemon=True).start()
-
-        def _do_rebuild(self):
-            try:
-                from autohelper.modules.index.service import IndexService
-                svc = IndexService()
-                svc.rebuild_index()
-                self._update_status("Rebuild Complete", (0, 1, 0, 1))
-            except Exception as e:
-                self._update_status(f"Error: {str(e)}", (1, 0, 0, 1))
-
-        def _do_scan(self):
-            try:
-                # For M0/M1, rescan is alias to rebuild or lighter scan
-                from autohelper.modules.index.service import IndexService
-                svc = IndexService()
-                svc.rescan()
-                self._update_status("Scan Complete", (0, 1, 0, 1))
-            except Exception as e:
-                self._update_status(f"Error: {str(e)}", (1, 0, 0, 1))
-
-        def _update_status(self, text, color):
-            # Kivy runs on main thread, this might need clock schedule if strict
-            # But for simple property updates it often works or use Clock.schedule_once
-            from kivy.clock import Clock
-            def update(dt):
-                self.status_label.text = text
-                self.status_label.color = color
-            Clock.schedule_once(update)
-
-        def cancel(self, instance):
-            self.app.stop()
+        def start_scan(self):
+            self.toggle_busy(True)
+            self.lbl_op_status.setText("Scanning...")
             
-    return InternalConfigLayout
+            def _scan():
+                from autohelper.modules.index.service import IndexService
+                try:
+                    IndexService().rescan()
+                except Exception as e:
+                    raise e
+            
+            self.worker = Worker(_scan)
+            self.worker.finished.connect(self.on_work_finished)
+            self.worker.start()
+
+        def confirm_rebuild(self):
+            reply = QMessageBox.question(self, "Confirm Rebuild", 
+                                       "Full rebuild will wipe the index and re-scan all files.\nThis may take time. Continue?",
+                                       QMessageBox.Yes | QMessageBox.No)
+            
+            if reply == QMessageBox.Yes:
+                self.start_rebuild()
+
+        def start_rebuild(self):
+            self.toggle_busy(True)
+            self.lbl_op_status.setText("Rebuilding...")
+            
+            def _rebuild():
+                from autohelper.modules.index.service import IndexService
+                IndexService().rebuild_index()
+
+            self.worker = Worker(_rebuild)
+            self.worker.finished.connect(self.on_work_finished)
+            self.worker.start()
+
+        def on_work_finished(self, success, msg):
+            self.toggle_busy(False)
+            if success:
+                self.lbl_op_status.setText(msg)
+                self.refresh_stats()
+            else:
+                self.lbl_op_status.setText("Error!")
+                QMessageBox.warning(self, "Operation Failed", msg)
+
+        def toggle_busy(self, busy):
+            self.progress.setVisible(busy)
+            if busy:
+                self.progress.setRange(0, 0) # Indeterminate
+            else:
+                self.progress.setRange(0, 100)
+
+        # ... (Keep existing methods like align_to_tray, update_rainbow if needed, etc)
+        # But we previously replaced ConfigWindow. align_to_tray was a method of ConfigWindow.
+        # We need to include align_to_tray and move_to_tray_area here as well.
+        
+        def align_to_tray(self):
+            """Position window relative to tray icon and taskbar."""
+            target_rect = None
+            if hasattr(self, 'tray') and self.tray:
+                 target_rect = get_tray_icon_rect(self.tray)
+            
+            self.move_to_tray_area(target_rect)
+
+        def move_to_tray_area(self, tray_rect):
+            """Move window to best position relative to the tray rect."""
+            if not tray_rect:
+                # Fallback to Cursor
+                cursor_pos = self.cursor().pos()
+                x = cursor_pos.x() - self.width() // 2
+                y = cursor_pos.y() - self.height() - 10
+                self.move(x, y)
+                return
+
+            taskbar_edge, taskbar_rect = get_taskbar_info()
+            
+            # Default Center-X
+            x = tray_rect.center().x() - (self.width() // 2)
+            y = 0
+            
+            margin = 10
+            
+            if taskbar_edge == Qt.BottomEdge:
+                y = tray_rect.top() - self.height() - margin
+            elif taskbar_edge == Qt.TopEdge:
+                y = tray_rect.bottom() + margin
+            elif taskbar_edge == Qt.LeftEdge:
+                x = tray_rect.right() + margin
+                y = tray_rect.center().y() - (self.height() // 2)
+            elif taskbar_edge == Qt.RightEdge:
+                x = tray_rect.left() - self.width() - margin
+                y = tray_rect.center().y() - (self.height() // 2)
+                
+            # Screen Boundary Checks
+            screen = QApplication.screenAt(tray_rect.center())
+            if not screen: screen = QApplication.primaryScreen()
+            geo = screen.availableGeometry()
+            
+            # Clamp X
+            if x < geo.left() + 5: x = geo.left() + 5
+            if x + self.width() > geo.right() - 5: x = geo.right() - self.width() - 5
+            
+            # Clamp Y
+            if y < geo.top() + 5: y = geo.top() + 5
+            if y + self.height() > geo.bottom() - 5: y = geo.bottom() - self.height() - 5
+            
+            self.move(x, y)
+
+    return ConfigWindow
+
+# --- TRAY ICON ---
+
+class SystemTray(object):
+    pass
+
+def get_tray_class():
+    if not _ensure_qt_imported(): return object
+    
+    from PySide6.QtWidgets import QSystemTrayIcon, QMenu
+    from PySide6.QtGui import QAction, QIcon
+
+    class AutoHelperTray(QSystemTrayIcon):
+        def __init__(self, app, window):
+            super().__init__()
+            self.app = app
+            self.window = window
+            
+            self.setToolTip("AutoHelper Indexer")
+            
+            # Menu
+            self.menu = QMenu()
+            
+            action_show = QAction("Open Settings", self)
+            action_show.triggered.connect(self.show_window)
+            self.menu.addAction(action_show)
+            
+            self.menu.addSeparator()
+            
+            action_quit = QAction("Quit", self)
+            action_quit.triggered.connect(self.quit_app)
+            self.menu.addAction(action_quit)
+            
+            self.setContextMenu(self.menu)
+            
+            # Interaction
+            self.activated.connect(self.on_activated)
+
+        def show_window(self):
+            self.window.show()
+            self.window.raise_()
+            self.window.activateWindow()
+
+        def on_activated(self, reason):
+            if reason == QSystemTrayIcon.Trigger:
+                if self.window.isVisible():
+                    self.window.hide()
+                else:
+                    # Refresh position before showing
+                    self.position_window()
+                    self.window.show()
+                    self.window.raise_()
+                    self.window.activateWindow()
+
+        def position_window(self):
+            rect = get_tray_icon_rect(self)
+            if rect:
+                self.window.move_to_tray_area(rect)
+            else:
+                 # Fallback to cursor
+                from PySide6.QtGui import QCursor
+                self.window.move_to_tray_area(None)
+
+
+        def quit_app(self):
+            self.hide()
+            self.app.quit()
+
+    return AutoHelperTray
 
 def launch_config_popup():
-    """Launch the configuration popup."""
-    if not _ensure_kivy_imported():
+    """Launch the PySide6 configuration popup with System Tray."""
+    if not _ensure_qt_imported():
         return
-
-    ConfigLayoutClass = get_config_layout_class()
-
-    class ConfigApp(App):
-        def build(self):
-            self.title = "AutoHelper Settings"
-            # Hardcoded dark theme background
-            Window.clearcolor = (0.1, 0.1, 0.1, 1)
-            
-            # Update size to be a bit taller for more content
-            Window.size = (350, 500) 
-            Window.borderless = True
-            
-            self._position_window()
-            return ConfigLayoutClass(self)
         
-        def _position_window(self):
-            try:
-                import ctypes
-                user32 = ctypes.windll.user32
-                screen_width = user32.GetSystemMetrics(0)
-                screen_height = user32.GetSystemMetrics(1)
-                # Taskbar assumption: ~40-50px at bottom
-                taskbar_height = 48 
-                
-                win_w, win_h = Window.size
-                
-                # Bottom right, with margin
-                target_x = screen_width - win_w - 10
-                target_y = taskbar_height + 10 
-                # Note: Kivy Window.top/left coordinate system can vary
-                # Kivy usually uses top-left from top-left screen (SDL2)
-                # But let's try setting via Window.left/top
-                
-                Window.left = target_x
-                # Kivy top is distance from top of screen? 
-                Window.top = screen_height - win_h - target_y
-                
-            except Exception:
-                pass
+    app = QApplication.instance()
+    if not app:
+        app = QApplication(sys.argv)
+        # Prevent app from exiting when last window closes (we want it in tray)
+        app.setQuitOnLastWindowClosed(False)
+    
+    Window = get_window_class()
+    window = Window()
+    
+    # Setup Tray
+    Tray = get_tray_class()
+    tray = Tray(app, window)
+    window.tray = tray
+    
+    # Use Smiley Icon
+    icon = create_smiley_icon()
+    window.setWindowIcon(icon)
+    tray.setIcon(icon)
+    tray.show()
+    
+    # Launch logic: if just --popup, show window immediately
+    # And position it
+    window.align_to_tray()
+    window.show()
+    
+    if not QApplication.instance():
+         sys.exit(app.exec())
+    else:
+         app.exec()
 
+
+# --- WINDOWS TRAY GEOMETRY & ALIGNMENT ---
+
+def get_tray_icon_rect(tray_instance):
+    """
+    Get the screen rectangle of the tray icon.
+    Priority:
+    1. QSystemTrayIcon.geometry() (if available/valid)
+    2. Win32 Toolbar Scan (Reliable fallback)
+    3. None (Fail)
+    """
+    # 1. Try Qt Geometry (often valid after first click/activation)
+    rect = tray_instance.geometry()
+    if not rect.isEmpty() and rect.isValid():
+        return rect
+        
+    # 2. Fallback to Win32 Scan
+    scan_result = get_tray_location_win32(tray_instance.toolTip())
+    if scan_result:
+        # scan_result is (center_x, top_y) roughly. 
+        # We need a Rect. We'll approximate size as 24x24 standard.
+        cx, ty = scan_result
+        from PySide6.QtCore import QRect
+        # Assume square icon, centered at cx
+        width = 24
+        height = 24
+        return QRect(cx - width//2, ty, width, height)
+        
+    return None
+
+def get_taskbar_info():
+    """
+    Determine Taskbar position and size.
+    Returns: (edge, rect) where edge is Qt.Edge (Top, Bottom, Left, Right)
+    """
+    from PySide6.QtGui import QGuiApplication
+    
+    # We can infer taskbar from the primary screen's available geometry vs full geometry
+    screen = QGuiApplication.primaryScreen()
+    full_geo = screen.geometry()
+    avail_geo = screen.availableGeometry()
+    
+    # Compare
+    if avail_geo.height() < full_geo.height():
+        # Top or Bottom
+        if avail_geo.top() > full_geo.top():
+            return Qt.TopEdge, full_geo.adjusted(0, 0, 0, -avail_geo.height())
+        else:
+            return Qt.BottomEdge, full_geo.adjusted(0, avail_geo.height(), 0, 0)
+            
+    elif avail_geo.width() < full_geo.width():
+        # Left or Right
+        if avail_geo.left() > full_geo.left():
+            return Qt.LeftEdge, full_geo.adjusted(0, 0, -avail_geo.width(), 0)
+        else:
+            return Qt.RightEdge, full_geo.adjusted(avail_geo.width(), 0, 0, 0)
+            
+    # Default to Bottom if same (auto-hide?)
+    return Qt.BottomEdge, QGuiApplication.primaryScreen().geometry()
+
+def win32process_get_pid(hwnd):
+    import ctypes
+    pid = ctypes.c_ulong()
+    ctypes.windll.user32.GetWindowThreadProcessId(hwnd, ctypes.byref(pid))
+    return pid.value
+
+def read_process_memory(h_process, lp_base_address, lp_buffer, n_size):
+    import ctypes
+    bytes_read = ctypes.c_ulonglong(0)
+    ctypes.windll.kernel32.ReadProcessMemory(
+        h_process, 
+        lp_base_address, 
+        lp_buffer, 
+        n_size, 
+        ctypes.byref(bytes_read)
+    )
+
+def get_tray_location_win32(tooltip_text):
+    """
+    Finds the screen coordinates of the system tray icon with the matching tooltip.
+    Returns (center_x, top_y) or None.
+    """
     try:
-        ConfigApp().run()
-    except Exception as e:
-        print(f"Error launching popup: {e}")
+        import win32gui
+        import win32con
+        import commctrl
+        import ctypes
+        from ctypes import wintypes
+        
+        # High-DPI awareness
+        try:
+            ctypes.windll.shcore.SetProcessDpiAwareness(1)
+        except:
+            pass
+            
+        # Define TBBUTTON structure locally
+        class TBBUTTON(ctypes.Structure):
+            _fields_ = [
+                ('iBitmap', ctypes.c_int),
+                ('idCommand', ctypes.c_int),
+                ('fsState', ctypes.c_ubyte),
+                ('fsStyle', ctypes.c_ubyte),
+                ('bReserved', ctypes.c_byte * 2),
+                ('dwData', ctypes.c_ulonglong),
+                ('iString', ctypes.c_longlong),
+            ]
 
+        def find_toolbars():
+            toolbars = []
+            # 1. Main Tray
+            h_tray = win32gui.FindWindow("Shell_TrayWnd", None)
+            h_notify = win32gui.FindWindowEx(h_tray, 0, "TrayNotifyWnd", None)
+            h_pager = win32gui.FindWindowEx(h_notify, 0, "SysPager", None)
+            if h_pager:
+                toolbars.append(win32gui.FindWindowEx(h_pager, 0, "ToolbarWindow32", None))
+            
+            # Simple fallback for some Windows versions
+            toolbars.append(win32gui.FindWindowEx(h_notify, 0, "ToolbarWindow32", None))
+
+            # 2. Overflow Tray / Hidden Icons via Chevron
+            h_over = win32gui.FindWindow("NotifyIconOverflowWindow", None)
+            if h_over:
+                toolbars.append(win32gui.FindWindowEx(h_over, 0, "ToolbarWindow32", None))
+                
+            return [h for h in toolbars if h]
+
+        target_toolbars = find_toolbars()
+        
+        for hwnd_tb in target_toolbars:
+            count = win32gui.SendMessage(hwnd_tb, commctrl.TB_BUTTONCOUNT, 0, 0)
+            if count <= 0: continue
+            
+            pid = win32process_get_pid(hwnd_tb)
+            h_process = ctypes.windll.kernel32.OpenProcess(
+                win32con.PROCESS_ALL_ACCESS, False, pid
+            )
+            if not h_process: continue
+            
+            try:
+                for i in range(count):
+                    # Buffer for TBBUTTON
+                    lp_btn = ctypes.windll.kernel32.VirtualAllocEx(
+                        h_process, None, ctypes.sizeof(TBBUTTON), win32con.MEM_COMMIT, win32con.PAGE_READWRITE
+                    )
+                    
+                    # Get Button
+                    win32gui.SendMessage(hwnd_tb, 0x0417, i, lp_btn) # TB_GETBUTTON
+                    
+                    button = TBBUTTON()
+                    read_process_memory(h_process, lp_btn, ctypes.byref(button), ctypes.sizeof(button))
+                    
+                    # Get Text
+                    txt_len = win32gui.SendMessage(hwnd_tb, 0x044B, button.idCommand, 0) # TB_GETBUTTONTEXTW length
+                    if txt_len > 0:
+                         # Allocate for text
+                         # Note: txt_len is chars, need bytes (wchar = 2 bytes) + null
+                         buf_size = (txt_len + 1) * 2
+                         lp_txt = ctypes.windll.kernel32.VirtualAllocEx(
+                             h_process, None, buf_size, win32con.MEM_COMMIT, win32con.PAGE_READWRITE
+                         )
+                         
+                         win32gui.SendMessage(hwnd_tb, 0x044B, button.idCommand, lp_txt)
+                         
+                         local_txt = ctypes.create_unicode_buffer(txt_len + 1)
+                         read_process_memory(h_process, lp_txt, ctypes.byref(local_txt), buf_size)
+                         
+                         text = local_txt.value
+                         if tooltip_text in text:
+                             # Found match! Get Rect.
+                             lp_rect = ctypes.windll.kernel32.VirtualAllocEx(
+                                 h_process, None, ctypes.sizeof(wintypes.RECT), win32con.MEM_COMMIT, win32con.PAGE_READWRITE
+                             )
+                             win32gui.SendMessage(hwnd_tb, 0x041D, i, lp_rect) # TB_GETITEMRECT
+                             
+                             rect = wintypes.RECT()
+                             read_process_memory(h_process, lp_rect, ctypes.byref(rect), ctypes.sizeof(rect))
+                             
+                             # Map to Screen
+                             p1 = win32gui.ClientToScreen(hwnd_tb, (rect.left, rect.top))
+                             p2 = win32gui.ClientToScreen(hwnd_tb, (rect.right, rect.bottom))
+                             
+                             ctypes.windll.kernel32.VirtualFreeEx(h_process, lp_btn, 0, win32con.MEM_RELEASE)
+                             ctypes.windll.kernel32.VirtualFreeEx(h_process, lp_txt, 0, win32con.MEM_RELEASE)
+                             ctypes.windll.kernel32.VirtualFreeEx(h_process, lp_rect, 0, win32con.MEM_RELEASE)
+                             
+                             center_x = (p1[0] + p2[0]) // 2
+                             top_y = p1[1] # Top of icon
+                             return center_x, top_y
+
+                         ctypes.windll.kernel32.VirtualFreeEx(h_process, lp_txt, 0, win32con.MEM_RELEASE)
+                    
+                    ctypes.windll.kernel32.VirtualFreeEx(h_process, lp_btn, 0, win32con.MEM_RELEASE)
+
+            finally:
+                ctypes.windll.kernel32.CloseHandle(h_process)
+                
+    except Exception as e:
+        print(f"Tray API error: {e}")
+        
+    return None
+
+def create_smiley_icon():
+    """Draw a simple smiley face icon."""
+    if not _ensure_qt_imported(): return None
+    
+    from PySide6.QtGui import QPixmap, QPainter, QPen, QBrush, QColor
+    
+    size = 64
+    pixmap = QPixmap(size, size)
+    pixmap.fill(Qt.transparent)
+    
+    painter = QPainter(pixmap)
+    painter.setRenderHint(QPainter.Antialiasing)
+    
+    # Yellow Face
+    painter.setBrush(QBrush(QColor("#FFCC00")))
+    painter.setPen(Qt.NoPen)
+    painter.drawEllipse(2, 2, size-4, size-4)
+    
+    # Original "Old Guy" Geometry
+    # Eyes (Centers at 16,24 and 48,24)
+    painter.setBrush(QBrush(Qt.black))
+    painter.drawEllipse(12, 20, 8, 8) # Left (16-4, 24-4)
+    painter.drawEllipse(44, 20, 8, 8) # Right (48-4, 24-4)
+    
+    # Simple Smile (Original Arc)
+    # BBox from original: 20, 24, 44, 48 -> x=20, y=24, w=24, h=24
+    pen = QPen(Qt.black)
+    pen.setWidth(3)
+    pen.setCapStyle(Qt.RoundCap)
+    painter.setPen(pen)
+    painter.setBrush(Qt.NoBrush)
+    
+    # Qt angles: 1/16th of a degree. Start 0 (3 o'clock), span -180 (clockwise to 9 o'clock)
+    painter.drawArc(20, 24, 24, 24, 0 * 16, -180 * 16)
+    
+    painter.end()
+    return QIcon(pixmap)
