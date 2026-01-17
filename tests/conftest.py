@@ -1,14 +1,14 @@
 """Pytest fixtures for AutoHelper tests."""
 
 import tempfile
+from collections.abc import Generator
 from pathlib import Path
-from typing import Generator
 
 import pytest
 from fastapi.testclient import TestClient
 
 from autohelper.app import build_app
-from autohelper.config import Settings
+from autohelper.config import Settings, init_settings, reset_settings
 from autohelper.db import init_db
 from autohelper.db.migrate import run_migrations
 
@@ -37,10 +37,13 @@ def test_settings(temp_dir: Path) -> Settings:
 @pytest.fixture
 def test_db(test_settings: Settings):
     """Initialize test database with migrations."""
+    # Initialize settings so services use test settings
+    init_settings(test_settings)
     db = init_db(test_settings.db_path)
     run_migrations(db)
     yield db
     db.close()
+    reset_settings()
 
 
 @pytest.fixture

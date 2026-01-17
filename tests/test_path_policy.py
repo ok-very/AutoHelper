@@ -1,7 +1,6 @@
 """Tests for path safety policy."""
 
 import os
-import tempfile
 from pathlib import Path
 
 import pytest

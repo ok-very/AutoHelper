@@ -45,6 +45,25 @@ class Settings(BaseSettings):
         return [Path(r).resolve() for r in self.allowed_roots if r]
 
 
+# Global settings instance for caching
+_settings: Settings | None = None
+
+
+def init_settings(settings: Settings) -> None:
+    """Initialize global settings (call during app startup or test setup)."""
+    global _settings
+    _settings = settings
+
+
 def get_settings() -> Settings:
     """Get cached settings instance."""
-    return Settings()
+    global _settings
+    if _settings is None:
+        _settings = Settings()
+    return _settings
+
+
+def reset_settings() -> None:
+    """Reset settings (for testing)."""
+    global _settings
+    _settings = None
