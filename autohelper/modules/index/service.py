@@ -441,7 +441,7 @@ class IndexService:
                 """
                 UPDATE files 
                 SET size = ?, mtime_ns = ?, content_hash = ?, 
-                    last_seen_at = ?, indexed_at = ?, mime = ?
+                    last_seen_at = ?, indexed_at = ?
                 WHERE file_id = ?
                 """,
                 (
@@ -450,7 +450,6 @@ class IndexService:
                     content_hash,
                     utcnow_iso(),
                     utcnow_iso(),
-                    None, # Mime detection later
                     existing_id
                 )
             )

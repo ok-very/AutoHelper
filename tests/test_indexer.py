@@ -84,7 +84,34 @@ class TestIndexService:
         self, client: TestClient, temp_dir: Path, test_db
     ) -> None:
         """Standard rebuild should NOT hash large files unless forced."""
-        pass
+        test_file = temp_dir / "large_file.txt"
+        # 1.1MB file
+        size = 1_100_000
+        # Create a sparse file or just write zeroes to be fast
+        with open(test_file, "wb") as f:
+            f.seek(size - 1)
+            f.write(b"\0")
+            
+        service = IndexService()
+        service.rebuild_index(force_hash=False)
+        
+        db = get_db()
+        canonical = str(test_file.resolve())
+        file_entry = db.execute("SELECT * FROM files WHERE canonical_path = ?", (canonical,)).fetchone()
+        if not file_entry:
+             file_entry = db.execute("SELECT * FROM files WHERE lower(canonical_path) = lower(?)", (canonical,)).fetchone()
+             
+        assert file_entry is not None
+        assert file_entry["size"] == size
+        assert file_entry["content_hash"] is None
+
+        # Verify force_hash=True DOES hash it
+        service.rebuild_index(force_hash=True)
+        file_entry = db.execute("SELECT * FROM files WHERE canonical_path = ?", (canonical,)).fetchone()
+        if not file_entry:
+             file_entry = db.execute("SELECT * FROM files WHERE lower(canonical_path) = lower(?)", (canonical,)).fetchone()
+        
+        assert file_entry["content_hash"] is not None
     
     def test_rebuild_handles_nested_dirs(
         self, client: TestClient, temp_dir: Path, test_db
