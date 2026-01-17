@@ -1,42 +1,91 @@
 # AutoHelper
 
-**Status:** Planning + initial implementation (see Issues).
+Local-first Python filesystem orchestration service for AutoArt integration.
 
-AutoHelper is the local-first orchestration service that sits closest to the *authoritative filesystem* (e.g., OneDrive‑synced project tree plus approved local working directories) and turns workflow intent into concrete, logged file-level outcomes.
+## Features
 
-It is designed to complement:
-- **AutoArt** (workflow brain): authoritative for workflow state, records, and internal `#record:field` resolution.
-- **Automail** (email IO boundary): authoritative for mailbox IO (ingest + send). AutoHelper may prepare drafts/attachments on disk or emit structured send requests.
+- **Path Safety**: Root allowlist, canonicalization, symlink blocking
+- **SQLite Index**: WAL mode, FTS5 search, migration system
+- **Audit Logging**: Append-only log with idempotency support
+- **FastAPI**: Health/status endpoints, request context tracing
 
-## System metaphor
-- AutoArt = decides and logs intent/events.
-- AutoHelper = executes filesystem work (index/search/reference/modify/create/fetch).
-- Automail = communicates via email.
+## Quick Start
 
-## Core responsibilities (target verbs)
-- **Index**: Crawl configured roots, track file identity/changes, and optionally extract searchable text.
-- **Search**: Low-latency search over path/metadata/content, optionally scoped to a folder/context.
-- **Reference**: Stable pointers between workflow items and files (path + identity), plus traceability.
-- **Modify**: Conservative, logged rename/move/stamp operations within approved roots.
-- **Create**: Generate artifacts (manifests, reports, minutes) onto the authoritative filesystem.
-- **Fetch**: Previews/snippets/extracted text for AutoArt; staging inputs for Automail.
+```bash
+# Install dependencies
+pip install -e ".[dev]"
 
-## Proposed API surface (planned)
-- Index: `POST /index/rebuild`, `POST /index/rescan`, `GET /index/status`
-- Search: `GET /search`
-- Reference: `POST /reference/register`, `POST /reference/resolve`
-- Modify: `POST /ops/rename`, `POST /ops/move`, `POST /ops/stamp-sidecar`
-- Create: `POST /generate/intake-manifest`, `POST /generate/report`, `POST /generate/meeting-minutes`
-- Fetch: `GET /file/preview`, `GET /file/text`, `GET /snapshot`
+# Set environment variables
+export AUTOHELPER_ALLOWED_ROOTS="C:\\Projects,D:\\Data"
+export AUTOHELPER_DB_PATH="./data/autohelper.db"
 
-## Safety defaults
-- Root allowlist enforcement; refuse out-of-bounds requests.
-- Prefer reversible operations; avoid deletion.
-- Maintain audit logs and visible “index coverage” gaps.
+# Run the server
+python -m autohelper.main
 
-## Work plan
-Implementation is tracked as GitHub issues (M0–M5) in this repository.
+# Or use uvicorn directly
+uvicorn autohelper.app:build_app --factory --reload
+```
 
-## Notes on integration
-- AutoArt already has its own internal `#` resolver/search endpoint for records; AutoHelper search is for filesystem discovery.
-- Early phases should prefer “AutoArt provides payload” for generators (e.g., report/minutes) to avoid tight coupling.
+## API Endpoints
+
+### Health
+- `GET /health` - Simple health check
+- `GET /status` - Detailed status with DB, migrations, roots
+
+### Index (M1)
+- `POST /index/rebuild` - Full index rebuild
+- `POST /index/rescan` - Incremental rescan
+- `GET /index/status` - Index run status
+
+### Search (M2)
+- `GET /search` - Search files by path/name/content
+
+### References (M3)
+- `POST /reference/register` - Register file reference
+- `POST /reference/resolve` - Resolve references
+
+## Configuration
+
+Environment variables (prefix `AUTOHELPER_`):
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `HOST` | 127.0.0.1 | Server host |
+| `PORT` | 8100 | Server port |
+| `DB_PATH` | ./data/autohelper.db | SQLite database path |
+| `ALLOWED_ROOTS` | (empty) | Comma-separated root paths |
+| `BLOCK_SYMLINKS` | true | Block symlink traversal |
+| `LOG_LEVEL` | INFO | Logging level |
+| `CORS_ORIGINS` | localhost:5173,localhost:3000 | CORS origins |
+
+## Project Structure
+
+```
+autohelper/
+├── app.py              # FastAPI app factory
+├── main.py             # Uvicorn entrypoint
+├── config/             # Settings (pydantic-settings)
+├── shared/             # Types, errors, logging (shared across modules)
+├── infra/
+│   ├── fs/             # Filesystem protocols, path safety
+│   └── audit/          # Audit logging
+├── db/
+│   ├── conn.py         # SQLite connection
+│   ├── migrate.py      # Migration runner
+│   └── migrations/     # SQL migration files
+└── modules/
+    ├── health/         # Health/status endpoints
+    ├── index/          # Indexer (M1)
+    ├── search/         # Search (M2)
+    └── ...
+```
+
+## Integration
+
+AutoArt calls AutoHelper for filesystem operations. AutoHelper treats `work_item_id` and `context_id` as opaque IDs from AutoArt.
+
+Headers for tracing:
+- `X-Request-ID` - Request identifier
+- `X-Work-Item-ID` - AutoArt work item
+- `X-Context-ID` - AutoArt context
+- `X-Idempotency-Key` - Idempotency key for retries
