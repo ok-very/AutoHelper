@@ -33,6 +33,8 @@ QComboBox = None
 QMessageBox = None
 QFrame = None
 QScrollArea = None
+QCheckBox = None
+QSpinBox = None
 
 QMenu = None
 QSystemTrayIcon = None
@@ -43,7 +45,7 @@ QEvent = None
 
 def _ensure_qt_imported():
     """Import PySide6 modules on demand."""
-    global QApplication, QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushButton, QPlainTextEdit, QLineEdit, QProgressBar, QFileDialog, QThread, Signal, Qt, QTimer, QScreen, QColor, QSystemTrayIcon, QMenu, QAction, QStyle, QIcon, QEvent, QTabWidget, QListWidget, QListWidgetItem, QComboBox, QMessageBox, QFrame, QScrollArea
+    global QApplication, QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushButton, QPlainTextEdit, QLineEdit, QProgressBar, QFileDialog, QThread, Signal, Qt, QTimer, QScreen, QColor, QSystemTrayIcon, QMenu, QAction, QStyle, QIcon, QEvent, QTabWidget, QListWidget, QListWidgetItem, QComboBox, QMessageBox, QFrame, QScrollArea, QCheckBox, QSpinBox
     if QApplication is not None:
         return True
     
@@ -52,7 +54,7 @@ def _ensure_qt_imported():
                                      QLabel, QPushButton, QPlainTextEdit, QLineEdit, 
                                      QProgressBar, QFileDialog, QSystemTrayIcon, QMenu, QStyle,
                                      QTabWidget, QListWidget, QListWidgetItem, QComboBox, QMessageBox,
-                                     QFrame, QScrollArea)
+                                     QFrame, QScrollArea, QCheckBox, QSpinBox)
         from PySide6.QtCore import QThread, Signal, Qt, QTimer, QEvent
         from PySide6.QtGui import QScreen, QColor, QAction, QIcon
         return True
@@ -213,7 +215,12 @@ def get_window_class():
             self.setup_roots_tab()
             self.tabs.addTab(self.tab_roots, "Roots")
             
-            # Tab 3: Advanced
+            # Tab 3: Mail
+            self.tab_mail = QWidget()
+            self.setup_mail_tab()
+            self.tabs.addTab(self.tab_mail, "Mail")
+            
+            # Tab 4: Advanced
             self.tab_advanced = QWidget()
             self.setup_advanced_tab()
             self.tabs.addTab(self.tab_advanced, "Adv.")
@@ -292,6 +299,79 @@ def get_window_class():
             
             # Update Stats immediately
             self.refresh_stats()
+
+        def setup_mail_tab(self):
+            layout = QVBoxLayout(self.tab_mail)
+            layout.setContentsMargins(15, 15, 15, 15)
+            layout.setSpacing(10)
+            
+            # 1. Status Section
+            status_grp = QFrame()
+            status_grp.setStyleSheet("background: white; border: 1px solid #eceff1; border-radius: 4px;")
+            s_layout = QVBoxLayout(status_grp)
+            
+            self.chk_mail_enabled = QCheckBox("Enable Mail Polling")
+            self.chk_mail_enabled.setChecked(self.current_config.get("mail_enabled", False))
+            s_layout.addWidget(self.chk_mail_enabled)
+            
+            row_int = QHBoxLayout()
+            row_int.addWidget(QLabel("Poll Interval (s):"))
+            self.spin_mail_interval = QSpinBox()
+            self.spin_mail_interval.setRange(5, 3600)
+            self.spin_mail_interval.setValue(self.current_config.get("mail_poll_interval", 30))
+            row_int.addWidget(self.spin_mail_interval)
+            s_layout.addLayout(row_int)
+            
+            layout.addWidget(status_grp)
+            
+            # 2. Ingestion Section
+            ingest_grp = QFrame()
+            ingest_grp.setStyleSheet("background: white; border: 1px solid #eceff1; border-radius: 4px;")
+            i_layout = QVBoxLayout(ingest_grp)
+            i_layout.addWidget(QLabel("Manual Ingestion"))
+            
+            btn_ingest = QPushButton("Ingest PST/OST...")
+            btn_ingest.clicked.connect(self.ingest_pst_dialog)
+            i_layout.addWidget(btn_ingest)
+            
+            self.lbl_ingest_status = QLabel("Ready")
+            self.lbl_ingest_status.setStyleSheet("color: #90a4ae; font-style: italic;")
+            i_layout.addWidget(self.lbl_ingest_status)
+            
+            layout.addWidget(ingest_grp)
+            layout.addStretch()
+            
+            # Connect change signals to enable save
+            self.chk_mail_enabled.stateChanged.connect(lambda: self.btn_save.setEnabled(True))
+            self.spin_mail_interval.valueChanged.connect(lambda: self.btn_save.setEnabled(True))
+
+        def ingest_pst_dialog(self):
+            path, _ = QFileDialog.getOpenFileName(self, "Select Outlook Data File", "", "Outlook Files (*.pst *.ost)")
+            if path:
+                self.start_ingestion(path)
+
+        def start_ingestion(self, path):
+             self.lbl_ingest_status.setText(f"Ingesting {os.path.basename(path)}...")
+             
+             self.ingest_result = None
+             def _wrapper():
+                 # We can't import at top level if Qt not guaranteed, but here is fine
+                 from autohelper.modules.mail import MailService
+                 self.ingest_result = MailService().ingest_pst(path)
+                 
+             self.worker = Worker(_wrapper)
+             self.worker.finished.connect(lambda s, m: self.on_ingest_finished(s, m))
+             self.worker.start()
+
+        def on_ingest_finished(self, success, msg):
+            if success and self.ingest_result:
+                res = self.ingest_result
+                if res.get("success"):
+                     self.lbl_ingest_status.setText(f"Done. Processed {res.get('count')} emails.")
+                else:
+                     self.lbl_ingest_status.setText(f"Error: {res.get('error')}")
+            else:
+                self.lbl_ingest_status.setText(f"Error: {msg}")
 
         def setup_roots_tab(self):
             layout = QVBoxLayout(self.tab_roots)
@@ -424,7 +504,9 @@ def get_window_class():
             # Save
             new_config = {
                 "allowed_roots": valid_roots,
-                "excludes": self.current_config.get("excludes", []) 
+                "excludes": self.current_config.get("excludes", []),
+                "mail_enabled": self.chk_mail_enabled.isChecked(),
+                "mail_poll_interval": self.spin_mail_interval.value()
             }
             try:
                 self.config_store.save(new_config)
@@ -437,6 +519,16 @@ def get_window_class():
                 # API check: Can we signal re-init?
                 from autohelper.config.settings import reset_settings
                 reset_settings()
+                
+                # Toggle mail service based on new config
+                from autohelper.modules.mail import MailService
+                mail_svc = MailService()
+                # Reload settings in the service
+                mail_svc.settings = get_settings()
+                if new_config["mail_enabled"]:
+                    mail_svc.start()
+                else:
+                    mail_svc.stop()
                 
             except Exception as e:
                 QMessageBox.critical(self, "Save Error", str(e))

@@ -46,9 +46,11 @@ class ConfigStore:
     
     def _get_defaults(self) -> dict[str, Any]:
         """Return default configuration."""
-        # Try to infer from environment/existing settings if possible, 
+        # Try to infer from environment/existing settings if possible,
         # but otherwise valid empty defaults
         return {
             "allowed_roots": [],
             "excludes": ["pyc", "__pycache__", ".git", ".idea", "node_modules"],
+            "mail_enabled": False,
+            "mail_poll_interval": 30,
         }

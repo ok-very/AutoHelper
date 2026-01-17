@@ -40,6 +40,12 @@ class Settings(BaseSettings):
     # CORS
     cors_origins: list[str] = Field(default=["http://localhost:5173", "http://localhost:3000"])
     
+    # Mail Polling
+    mail_enabled: bool = False
+    mail_poll_interval: int = 30  # seconds
+    mail_output_path: Path = Field(default_factory=lambda: Path(Path.home() / "OneDrive" / "Emails"))
+    mail_ingest_path: Path = Field(default_factory=lambda: Path(Path.home() / "Documents" / "AutoHelper" / "Ingest"))
+    
     def get_allowed_roots(self) -> list[Path]:
         """Parse and validate allowed root paths."""
         return [Path(r).resolve() for r in self.allowed_roots if r]
