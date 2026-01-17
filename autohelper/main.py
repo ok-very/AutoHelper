@@ -30,6 +30,12 @@ def main() -> None:
     )
     server = uvicorn.Server(config)
 
+    if "--popup" in sys.argv:
+        print("Starting Config Popup...")
+        from autohelper.gui.popup import launch_config_popup
+        launch_config_popup()
+        sys.exit(0)
+
     if "--tray" in sys.argv:
         print("Starting in System Tray mode...")
         try:
