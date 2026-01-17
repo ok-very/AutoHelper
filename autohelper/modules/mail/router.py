@@ -2,7 +2,9 @@
 Mail module API routes.
 """
 
-from fastapi import APIRouter, BackgroundTasks, Query
+import json
+
+from fastapi import APIRouter, HTTPException, Query
 
 from autohelper.config import get_settings
 from autohelper.db import get_db
@@ -62,34 +64,34 @@ async def list_emails(
     """List transient emails with optional filtering."""
     db = get_db()
 
-    # Build query
-    where_clause = ""
-    params: list = []
-
+    # Use parameterized queries to avoid SQL injection
+    # The where_clause only contains static SQL, user input goes through params
     if project_id:
-        where_clause = "WHERE project_id = ?"
-        params.append(project_id)
+        count_sql = "SELECT COUNT(*) FROM transient_emails WHERE project_id = ?"
+        total = db.execute(count_sql, (project_id,)).fetchone()[0]
 
-    # Get total count
-    count_sql = f"SELECT COUNT(*) FROM transient_emails {where_clause}"
-    total = db.execute(count_sql, params).fetchone()[0]
+        rows = db.execute("""
+            SELECT id, subject, sender, received_at, project_id, body_preview,
+                   metadata, ingestion_id, created_at
+            FROM transient_emails
+            WHERE project_id = ?
+            ORDER BY received_at DESC
+            LIMIT ? OFFSET ?
+        """, (project_id, limit, offset)).fetchall()
+    else:
+        count_sql = "SELECT COUNT(*) FROM transient_emails"
+        total = db.execute(count_sql).fetchone()[0]
 
-    # Get paginated results
-    query_sql = f"""
-        SELECT id, subject, sender, received_at, project_id, body_preview,
-               metadata, ingestion_id, created_at
-        FROM transient_emails
-        {where_clause}
-        ORDER BY received_at DESC
-        LIMIT ? OFFSET ?
-    """
-    params.extend([limit, offset])
-
-    rows = db.execute(query_sql, params).fetchall()
+        rows = db.execute("""
+            SELECT id, subject, sender, received_at, project_id, body_preview,
+                   metadata, ingestion_id, created_at
+            FROM transient_emails
+            ORDER BY received_at DESC
+            LIMIT ? OFFSET ?
+        """, (limit, offset)).fetchall()
 
     emails = []
     for row in rows:
-        import json
         metadata = None
         if row[6]:
             try:
@@ -130,10 +132,8 @@ async def get_email(email_id: str) -> TransientEmail:
     """, (email_id,)).fetchone()
 
     if not row:
-        from fastapi import HTTPException
         raise HTTPException(status_code=404, detail="Email not found")
 
-    import json
     metadata = None
     if row[6]:
         try:
@@ -186,20 +186,14 @@ async def list_ingestion_log(
 
 
 @router.post("/ingest", response_model=IngestResponse)
-async def ingest_pst(
-    request: IngestRequest,
-    background_tasks: BackgroundTasks,
-) -> IngestResponse:
+async def ingest_pst(request: IngestRequest) -> IngestResponse:
     """
     Ingest a PST/OST file.
 
-    The ingestion runs in the background. Check the ingestion-log endpoint
-    for status updates.
+    Security: File must be located under the configured mail_ingest_path
+    and have a .pst or .ost extension.
     """
     svc = MailService()
-
-    # Run ingestion synchronously for now (could be background)
-    # For large PST files, consider moving to background_tasks
     result = svc.ingest_pst(request.file_path)
 
     return IngestResponse(

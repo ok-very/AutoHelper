@@ -1,17 +1,17 @@
 """
 Mail Service Module
 Handles background polling of Outlook Inbox and ingestion of PST/OST files.
+Note: Outlook integration requires Windows with pywin32 installed.
 """
 
 import os
+import sys
 import time
 import json
 import threading
-import pythoncom
-import win32com.client
 from pathlib import Path
 from datetime import datetime, timedelta
-from typing import Optional, Dict, List, Tuple
+from typing import Optional, Dict, List, Tuple, Any
 import re
 
 from autohelper.config import get_settings
@@ -19,6 +19,22 @@ from autohelper.db import get_db
 from autohelper.shared.logging import get_logger
 
 logger = get_logger(__name__)
+
+# Windows-specific imports for Outlook COM automation
+# Guarded to allow module import on non-Windows platforms
+_HAS_WIN32 = False
+pythoncom: Any = None
+win32com_client: Any = None
+
+if sys.platform == "win32":
+    try:
+        import pythoncom as _pythoncom
+        import win32com.client as _win32com_client
+        pythoncom = _pythoncom
+        win32com_client = _win32com_client
+        _HAS_WIN32 = True
+    except ImportError:
+        logger.warning("pywin32 not installed; Outlook integration unavailable")
 
 # =============================================================================
 # CONSTANTS & CONFIG
@@ -117,6 +133,10 @@ class MailService:
         
     def start(self):
         """Start the background polling thread if enabled."""
+        if not _HAS_WIN32:
+            logger.warning("Mail Service: Cannot start - pywin32 not available (Windows only)")
+            return
+
         if not self.settings.mail_enabled:
             logger.info("Mail Service: Disabled in settings")
             return
@@ -164,8 +184,10 @@ class MailService:
 
     def _get_outlook(self):
         """Get Outlook Application object securely."""
+        if not _HAS_WIN32 or win32com_client is None:
+            return None
         try:
-            return win32com.client.Dispatch("Outlook.Application")
+            return win32com_client.Dispatch("Outlook.Application")
         except Exception:
             return None
 
@@ -313,8 +335,25 @@ class MailService:
         """
         Ingest a PST file, extract emails, and cleanup.
         Ran in a separate thread usually, or blocking if called directly.
+
+        Security: Only files under mail_ingest_path with .pst/.ost extension are allowed.
         """
+        if not _HAS_WIN32:
+            return {"success": False, "error": "Outlook integration unavailable (Windows only)"}
+
         path = Path(pst_path).resolve()
+
+        # Security: Validate file extension
+        if path.suffix.lower() not in (".pst", ".ost"):
+            return {"success": False, "error": "Invalid file type. Only .pst and .ost files are allowed."}
+
+        # Security: Validate path is under configured ingest directory
+        ingest_base = self.settings.mail_ingest_path.resolve()
+        try:
+            path.relative_to(ingest_base)
+        except ValueError:
+            return {"success": False, "error": f"File must be located under {ingest_base}"}
+
         if not path.exists():
             return {"success": False, "error": "File not found"}
 

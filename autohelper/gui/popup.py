@@ -427,50 +427,24 @@ def get_window_class():
             layout.addStretch()
 
         def refresh_stats(self):
-            # Quick async check of DB/Index
+            """Refresh database statistics synchronously (fast for local SQLite)."""
             def _check():
                 try:
                     from autohelper.db import get_db
-                    # Just count files
                     db = get_db()
                     count = db.execute("SELECT count(*) FROM files").fetchone()[0]
                     return True, count
-                except:
+                except Exception:
                     return False, 0
-            
-            def _done(success, val):
-                if success:
-                    self.lbl_db_stat.setText("Connected")
-                    self.lbl_db_stat.setStyleSheet("color: #263238;")
-                    self.lbl_idx_stat.setText(str(val))
-                else:
-                    self.lbl_db_stat.setText("Error")
-                    self.lbl_db_stat.setStyleSheet("color: #d32f2f;")
-            
-            if hasattr(self, 'stat_worker'):
-                 pass # Already running
+
+            success, count = _check()
+            if success:
+                self.lbl_db_stat.setText("Connected")
+                self.lbl_db_stat.setStyleSheet("color: #263238;")
+                self.lbl_idx_stat.setText(str(count))
             else:
-                 self.stat_worker = Worker(_check)
-                 self.stat_worker.finished.connect(lambda s,m: _done(s, int(m) if s else 0))
-                 # self.stat_worker.start() # Worker expects string message on finish, adapter needed?
-                 # Custom worker adapter for this simple task
-                 # Re-using standard Worker for now, it sends (bool, str)
-                 # so we can pass count as str
-                 pass
-                 
-            # Note: The provided Worker class in this file is generic (func -> finished(bool, str))
-            # So we wrap _check to return str
-            def _wrapped():
-                s, c = _check()
-                if not s: raise Exception("DB Error")
-                # We can't return value in standard Worker run(), it just calls func().
-                # Modifying Worker or just doing it simple:
-                # Let's just do it synchronously for the popup (DB is local sqlite)
-                # It's fast enough.
-                pass
-            
-            s, c = _check()
-            _done(s, c)
+                self.lbl_db_stat.setText("Error")
+                self.lbl_db_stat.setStyleSheet("color: #d32f2f;")
 
 
         def add_root(self):
@@ -522,6 +496,7 @@ def get_window_class():
                 
                 # Toggle mail service based on new config
                 from autohelper.modules.mail import MailService
+                from autohelper.config import get_settings
                 mail_svc = MailService()
                 # Reload settings in the service
                 mail_svc.settings = get_settings()
@@ -715,36 +690,39 @@ def launch_config_popup():
     """Launch the PySide6 configuration popup with System Tray."""
     if not _ensure_qt_imported():
         return
-        
-    app = QApplication.instance()
-    if not app:
-        app = QApplication(sys.argv)
+
+    # Check if we're creating a new app or reusing existing
+    existing_app = QApplication.instance()
+    app = existing_app or QApplication(sys.argv)
+
+    if not existing_app:
         # Prevent app from exiting when last window closes (we want it in tray)
         app.setQuitOnLastWindowClosed(False)
-    
+
     Window = get_window_class()
     window = Window()
-    
+
     # Setup Tray
     Tray = get_tray_class()
     tray = Tray(app, window)
     window.tray = tray
-    
+
     # Use Smiley Icon
     icon = create_smiley_icon()
     window.setWindowIcon(icon)
     tray.setIcon(icon)
     tray.show()
-    
+
     # Launch logic: if just --popup, show window immediately
     # And position it
     window.align_to_tray()
     window.show()
-    
-    if not QApplication.instance():
-         sys.exit(app.exec())
+
+    # Run event loop - wrap in sys.exit only if we created the app
+    if not existing_app:
+        sys.exit(app.exec())
     else:
-         app.exec()
+        app.exec()
 
 
 # --- WINDOWS TRAY GEOMETRY & ALIGNMENT ---

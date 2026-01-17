@@ -76,4 +76,3 @@ class IngestResponse(BaseModel):
     success: bool
     count: int | None = None
     error: str | None = None
-    ingestion_id: int | None = None
