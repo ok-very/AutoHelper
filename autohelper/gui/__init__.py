@@ -1,0 +1,3 @@
+"""
+AutoHelper GUI module.
+"""
