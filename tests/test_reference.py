@@ -25,6 +25,8 @@ class TestReferenceService:
         IndexService().rebuild_index()
         
         service = ReferenceService()
+        service = ReferenceService()
+        from autohelper.modules.reference.schemas import ReferenceCreate
         req = ReferenceCreate(
             path=str(path.resolve()), 
             work_item_id="w1", 
@@ -53,7 +55,16 @@ class TestReferenceService:
         # Register
         IndexService().rebuild_index()
         service = ReferenceService()
-        req = ReferenceCreate(path=str(path.resolve()))
+        # Register
+        IndexService().rebuild_index()
+        service = ReferenceService()
+        from autohelper.modules.reference.schemas import ReferenceCreate
+        req = ReferenceCreate(
+            path=str(path.resolve()), 
+            work_item_id=None, 
+            context_id=None, 
+            note=None
+        )
         ref = service.register(req)
         
         # Resolve
@@ -79,7 +90,15 @@ class TestReferenceService:
         
         srv = ReferenceService()
         canonical = str(p1.resolve())
-        req = ReferenceCreate(path=canonical)
+        srv = ReferenceService()
+        canonical = str(p1.resolve())
+        from autohelper.modules.reference.schemas import ReferenceCreate
+        req = ReferenceCreate(
+            path=canonical, 
+            work_item_id=None, 
+            context_id=None, 
+            note=None
+        )
         ref = srv.register(req)
         
         # Verify we captured hash
@@ -110,4 +129,47 @@ class TestReferenceService:
         assert res.strategy in ("hash", "exact")
         # Case insensitive check for Windows robustness
         assert str(p2.resolve()).lower() in (res.path or "").lower()
+
+    def test_resolve_missing_ref_returns_error(self, client: TestClient, temp_dir: Path, test_db) -> None:
+        """Resolving a non-existent ref_id should raise Error."""
+        service = ReferenceService()
+        from autohelper.shared.errors import NotFoundError
+        
+        with pytest.raises(NotFoundError):
+            service.resolve("non_existent_ref")
+
+    def test_resolve_deleted_file_no_hash_match(self, client: TestClient, temp_dir: Path, test_db) -> None:
+        """Resolving a ref whose file is deleted and has no hash match should fail gracefully."""
+        # 1. Create file (no hash forced)
+        p = temp_dir / "temp.txt"
+        p.write_text("deleted content")
+        
+        IndexService().rebuild_index() # Might not hash if > 1MB but this is small.
+        # However, M1 Spec says default hashing is optional/off? 
+        # In implementation: if small (<1MB) it hashes. "deleted content" is small.
+        # We need to simulate NO hash. Delete hash from DB?
+        
+        service = ReferenceService()
+        from autohelper.modules.reference.schemas import ReferenceCreate
+        req = ReferenceCreate(
+            path=str(p.resolve()), 
+            work_item_id=None, 
+            context_id=None, 
+            note=None
+        )
+        ref = service.register(req)
+        
+        # Manually clear hash in DB to simulate 'no hash available' scenario
+        db = get_db()
+        db.execute("UPDATE refs SET content_hash = NULL WHERE ref_id = ?", (ref.ref_id,))
+        db.commit()
+        
+        # 2. Delete file
+        p.unlink()
+        
+        # 3. Resolve
+        res = service.resolve(ref.ref_id)
+        
+        assert res.found is False
+        assert res.strategy == "none"
 

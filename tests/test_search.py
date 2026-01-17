@@ -48,6 +48,21 @@ class TestSearchEndpoints:
         assert data["total"] == 0
         assert len(data["items"]) == 0
 
+    def test_search_empty_query_returns_422(
+        self, client: TestClient, temp_dir: Path, test_db
+    ) -> None:
+        """GET /search with empty q should return 422 due to min_length=1."""
+        response = client.get("/search/?q=")
+        assert response.status_code == 422
+
+    def test_search_missing_query_returns_422(
+        self, client: TestClient, temp_dir: Path, test_db
+    ) -> None:
+        """GET /search without q should return 422 due to required param."""
+        response = client.get("/search/")
+        # FastAPI might return 422 for missing required query param
+        assert response.status_code == 422
+
     def test_search_limit(
         self, client: TestClient, temp_dir: Path, test_db
     ) -> None:

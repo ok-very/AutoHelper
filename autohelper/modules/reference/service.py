@@ -20,10 +20,6 @@ from .schemas import ReferenceCreate, ReferenceDTO, ResolutionResult
 logger = get_logger(__name__)
 
 
-def utcnow_iso() -> str:
-    return datetime.now(timezone.utc).isoformat()
-
-
 class ReferenceService:
     """Service for managing file references."""
     
@@ -38,10 +34,15 @@ class ReferenceService:
         If file exists and is indexed, we link to file_id + content_hash.
         If not indexed, we try to index it first (lightweight).
         """
+        from autohelper.shared.time import utcnow_iso
+
         # 1. Resolve path to canonical
-        # We use path policy from index service or straight from DB?
-        # Ideally we reuse the PathPolicy to ensure it's allowed.
-        # But for now let's assume path is valid or allow arbitrary allowed roots.
+        # Ensure path is absolute and resolved
+        try:
+            canonical_path = str(Path(req.path).resolve())
+        except Exception:
+            # If path is invalid, fail
+            raise ValueError(f"Invalid path: {req.path}")
         
         # Check if file exists in index
         # Normalized path for lookup
@@ -57,9 +58,9 @@ class ReferenceService:
         file_id = None
         content_hash = None
         
-        row = self.db.execute("SELECT file_id, content_hash FROM files WHERE canonical_path = ?", (req.path,)).fetchone()
+        row = self.db.execute("SELECT file_id, content_hash FROM files WHERE canonical_path = ?", (canonical_path,)).fetchone()
         if not row:
-             row = self.db.execute("SELECT file_id, content_hash FROM files WHERE lower(canonical_path) = lower(?)", (req.path,)).fetchone()
+             row = self.db.execute("SELECT file_id, content_hash FROM files WHERE lower(canonical_path) = lower(?)", (canonical_path,)).fetchone()
         
         if row:
             file_id = row["file_id"]
@@ -73,26 +74,25 @@ class ReferenceService:
         ctx = get_request_context()
         user = ctx.actor if ctx else "system"
         
-        self.db.execute(
-            """
+        sql = """
             INSERT INTO refs (
                 ref_id, work_item_id, context_id, 
                 file_id, canonical_path, content_hash,
                 created_at, created_by, note
             ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-            """,
-            (
-                ref_id, 
-                req.work_item_id or (ctx.work_item_id if ctx else None),
-                req.context_id or (ctx.context_id if ctx else None),
-                file_id,
-                req.path,
-                content_hash,
-                utcnow_iso(),
-                user,
-                req.note
-            )
+        """
+        params = (
+            ref_id, 
+            req.work_item_id or (ctx.work_item_id if ctx else None),
+            req.context_id or (ctx.context_id if ctx else None),
+            file_id,
+            canonical_path,
+            content_hash,
+            utcnow_iso(),
+            user,
+            req.note
         )
+        self.db.execute(sql, params)
         self.db.commit()
         
         return self.get_ref(ref_id)
