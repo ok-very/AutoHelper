@@ -18,6 +18,7 @@ class FileStat:
     mtime_ns: int
     is_dir: bool
     is_symlink: bool
+    is_offline: bool = False  # OneDrive Files On-Demand: True if file is cloud-only
     
     @property
     def mtime(self) -> datetime:

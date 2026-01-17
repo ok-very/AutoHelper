@@ -14,12 +14,21 @@ class LocalFileSystem:
     def stat(self, path: Path) -> FileStat:
         """Get file stat info."""
         st = path.stat()
+        
+        # OneDrive Files On-Demand: detect offline (cloud-only) files on Windows
+        # FILE_ATTRIBUTE_OFFLINE (0x1000) indicates file content is not locally available
+        is_offline = False
+        if hasattr(st, 'st_file_attributes'):  # Windows only
+            FILE_ATTRIBUTE_OFFLINE = 0x1000
+            is_offline = bool(st.st_file_attributes & FILE_ATTRIBUTE_OFFLINE)
+        
         return FileStat(
             path=path,
             size=st.st_size,
             mtime_ns=st.st_mtime_ns,
             is_dir=path.is_dir(),
             is_symlink=path.is_symlink(),
+            is_offline=is_offline,
         )
     
     def exists(self, path: Path) -> bool:

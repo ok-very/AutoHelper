@@ -34,6 +34,9 @@ class Settings(BaseSettings):
     # Security
     block_symlinks: bool = True
     
+    # OneDrive Files On-Demand detection (Windows only)
+    onedrive_detection: bool = True
+    
     # Logging
     log_level: str = "INFO"
     
