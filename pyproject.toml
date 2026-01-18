@@ -18,6 +18,9 @@ dependencies = [
     "kivy>=2.3.0",
     # Windows-specific:
     "pywin32>=306; sys_platform == 'win32'",
+    # Mail Module
+    "requests>=2.31.0",
+    "google-generativeai>=0.3.0",
 ]
 
 [project.optional-dependencies]

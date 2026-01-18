@@ -21,6 +21,9 @@ from autohelper.modules.mail.schemas import (
 
 router = APIRouter(prefix="/mail", tags=["mail"])
 
+from .router_automail import router as automail_router
+router.include_router(automail_router)
+
 
 @router.get("/status", response_model=MailServiceStatus)
 async def get_status() -> MailServiceStatus:

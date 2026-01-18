@@ -141,6 +141,7 @@ def build_app(settings: Settings | None = None) -> FastAPI:
     app.include_router(search_router)
     app.include_router(ref_router)
     app.include_router(mail_router)
+
     
     # Root endpoint
     @app.get("/")
