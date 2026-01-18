@@ -37,26 +37,21 @@ def main() -> None:
         sys.exit(0)
 
     if "--tray" in sys.argv:
-        print("Starting in System Tray mode...")
+        print("Starting in System Tray mode (Qt)...")
         try:
-            from autohelper.gui.icon import AutoHelperIcon
-            
-            # Run server in background thread
+            # Server runs in background thread
             server_thread = threading.Thread(target=server.run, daemon=True)
             server_thread.start()
             
-            # Run icon in main thread (blocking)
-            def on_quit():
-                print("Stopping server...")
-                server.should_exit = True
-                server_thread.join(timeout=5)
-                print("Server stopped. Exiting.")
-                # Don't call sys.exit() here - pystray handles shutdown
-                # The icon.run() call will return after icon.stop() is called
-                
-            icon = AutoHelperIcon(stop_callback=on_quit)
-            icon.run()
-            # After icon.run() returns (when user clicks Exit), exit cleanly
+            # Qt handles tray icon and UI in main thread
+            from autohelper.gui.popup import launch_config_popup
+            launch_config_popup()  # This blocks until user exits from tray
+            
+            # Cleanup
+            print("Stopping server...")
+            server.should_exit = True
+            server_thread.join(timeout=5)
+            print("Server stopped.")
             sys.exit(0)
             
         except Exception as e:
