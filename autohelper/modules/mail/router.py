@@ -13,11 +13,14 @@ from autohelper.modules.mail.schemas import (
     MailServiceStatus,
     TransientEmail,
     TransientEmailList,
+    EnrichedTransientEmail,
+    TriageInfo,
     IngestionLogEntry,
     IngestionLogList,
     IngestRequest,
     IngestResponse,
 )
+from autohelper.modules.mail.enrichment import enrichment_service
 
 router = APIRouter(prefix="/mail", tags=["mail"])
 
@@ -155,6 +158,80 @@ async def get_email(email_id: str) -> TransientEmail:
         ingestion_id=row[7],
         created_at=row[8],
     )
+
+
+@router.get("/emails/enriched", response_model=list[EnrichedTransientEmail])
+async def list_enriched_emails(
+    project_id: str | None = Query(None, description="Filter by project ID"),
+    limit: int = Query(50, ge=1, le=500),
+    offset: int = Query(0, ge=0),
+) -> list[EnrichedTransientEmail]:
+    """
+    List emails with AI enrichment (triage analysis).
+
+    Performs on-demand enrichment if not cached in metadata.
+    For production, enrichment should be done asynchronously during ingestion.
+    """
+    # Get base emails using existing endpoint logic
+    email_list = await list_emails(project_id, limit, offset)
+
+    enriched = []
+    for email in email_list.emails:
+        # Check if already enriched (stored in metadata)
+        cached_enrichment = None
+        if email.metadata and "enrichment" in email.metadata:
+            cached_enrichment = email.metadata["enrichment"]
+
+        triage = None
+        priority = "medium"
+        priority_factors: list[str] = []
+        keywords: list[str] = []
+
+        if cached_enrichment:
+            # Use cached enrichment
+            if "triage" in cached_enrichment:
+                triage = TriageInfo(**cached_enrichment["triage"])
+            priority = cached_enrichment.get("priority", "medium")
+            priority_factors = cached_enrichment.get("priority_factors", [])
+            keywords = cached_enrichment.get("keywords", [])
+        elif enrichment_service.enabled:
+            # Perform on-demand enrichment
+            analysis = enrichment_service.analyze_email(
+                email.subject,
+                email.sender,
+                email.body_preview,
+            )
+            if analysis:
+                triage = TriageInfo(
+                    status=analysis.triage_status,  # type: ignore[arg-type]
+                    confidence=analysis.confidence,
+                    reasoning=analysis.reasoning,
+                    suggested_action=analysis.suggested_action,
+                )
+                priority = analysis.priority
+                priority_factors = analysis.priority_factors
+                keywords = analysis.keywords
+
+        # Build enriched response
+        enriched.append(EnrichedTransientEmail(
+            id=email.id,
+            subject=email.subject,
+            sender=email.sender,
+            received_at=email.received_at,
+            project_id=email.project_id,
+            body_preview=email.body_preview,
+            metadata=email.metadata,
+            ingestion_id=email.ingestion_id,
+            created_at=email.created_at,
+            triage=triage,
+            priority=priority,  # type: ignore[arg-type]
+            priority_factors=priority_factors,
+            extracted_keywords=keywords,
+            has_attachments=bool(email.metadata and email.metadata.get("has_attachments")),
+            thread_count=email.metadata.get("thread_count", 1) if email.metadata else 1,
+        ))
+
+    return enriched
 
 
 @router.get("/ingestion-log", response_model=IngestionLogList)
