@@ -765,42 +765,60 @@ def get_tray_class():
     return AutoHelperTray
 
 def launch_config_popup():
-    """Launch the PySide6 configuration popup with System Tray."""
+    """Launch the PySide6 configuration popup.
+    
+    When called from pystray context (existing app), just shows the window.
+    When run standalone (--popup flag), creates its own tray + event loop.
+    """
     if not _ensure_qt_imported():
         return
 
     # Check if we're creating a new app or reusing existing
     existing_app = QApplication.instance()
     app = existing_app or QApplication(sys.argv)
+    
+    # Track if this is standalone mode (called with --popup flag, no existing app)
+    standalone_mode = not existing_app
 
-    if not existing_app:
+    if standalone_mode:
         # Prevent app from exiting when last window closes (we want it in tray)
         app.setQuitOnLastWindowClosed(False)
 
     Window = get_window_class()
     window = Window()
 
-    # Setup Tray
-    Tray = get_tray_class()
-    tray = Tray(app, window)
-    window.tray = tray
+    # Only create QSystemTrayIcon in standalone mode
+    # In pystray mode, the pystray icon already exists
+    if standalone_mode:
+        Tray = get_tray_class()
+        tray = Tray(app, window)
+        window.tray = tray
 
-    # Use Smiley Icon
-    icon = create_smiley_icon()
-    window.setWindowIcon(icon)
-    tray.setIcon(icon)
-    tray.show()
+        # Use Smiley Icon
+        icon = create_smiley_icon()
+        window.setWindowIcon(icon)
+        tray.setIcon(icon)
+        tray.show()
+    else:
+        # Just set the window icon, no separate tray
+        icon = create_smiley_icon()
+        if icon:
+            window.setWindowIcon(icon)
 
-    # Launch logic: if just --popup, show window immediately
-    # And position it
+    # Position and show window
     window.align_to_tray()
     window.show()
+    window.raise_()
+    window.activateWindow()
 
-    # Run event loop - wrap in sys.exit only if we created the app
-    if not existing_app:
+    # Run event loop
+    if standalone_mode:
+        # Standalone mode: run event loop until app quits
         sys.exit(app.exec())
     else:
-        app.exec()
+        # Called from pystray: just process events and return when window closes
+        # Don't block - let the window close naturally via light dismiss
+        app.processEvents()
 
 
 # --- WINDOWS TRAY GEOMETRY & ALIGNMENT ---

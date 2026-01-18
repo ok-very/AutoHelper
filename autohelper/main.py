@@ -51,10 +51,13 @@ def main() -> None:
                 server.should_exit = True
                 server_thread.join(timeout=5)
                 print("Server stopped. Exiting.")
-                sys.exit(0)
+                # Don't call sys.exit() here - pystray handles shutdown
+                # The icon.run() call will return after icon.stop() is called
                 
             icon = AutoHelperIcon(stop_callback=on_quit)
             icon.run()
+            # After icon.run() returns (when user clicks Exit), exit cleanly
+            sys.exit(0)
             
         except Exception as e:
             print(f"Failed to start GUI mode: {e}")
