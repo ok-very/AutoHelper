@@ -3,6 +3,7 @@ Mail module API routes.
 """
 
 import json
+from datetime import datetime, timezone
 
 from fastapi import APIRouter, HTTPException, Query
 
@@ -15,6 +16,8 @@ from autohelper.modules.mail.schemas import (
     TransientEmailList,
     EnrichedTransientEmail,
     TriageInfo,
+    UpdateTriageRequest,
+    TriageActionResponse,
     IngestionLogEntry,
     IngestionLogList,
     IngestRequest,
@@ -157,6 +160,88 @@ async def get_email(email_id: str) -> TransientEmail:
         metadata=metadata,
         ingestion_id=row[7],
         created_at=row[8],
+    )
+
+
+@router.post("/emails/{email_id}/triage", response_model=TriageActionResponse)
+async def update_triage(
+    email_id: str,
+    request: UpdateTriageRequest,
+) -> TriageActionResponse:
+    """Update the triage status of an email."""
+    db = get_db()
+
+    # Check email exists and get current metadata
+    row = db.execute(
+        "SELECT metadata FROM transient_emails WHERE id = ?",
+        (email_id,),
+    ).fetchone()
+
+    if not row:
+        raise HTTPException(status_code=404, detail="Email not found")
+
+    # Parse existing metadata or create new
+    metadata = {}
+    if row[0]:
+        try:
+            metadata = json.loads(row[0])
+        except (json.JSONDecodeError, TypeError):
+            metadata = {}
+
+    # Update triage info
+    triaged_at = datetime.now(timezone.utc).isoformat()
+    metadata["triage_status"] = request.status
+    metadata["triage_notes"] = request.notes
+    metadata["triaged_at"] = triaged_at
+
+    # Store in enrichment cache for compatibility with enriched endpoint
+    if "enrichment" not in metadata:
+        metadata["enrichment"] = {}
+    metadata["enrichment"]["triage"] = {
+        "status": request.status,
+        "confidence": 1.0,
+        "reasoning": request.notes or "Manually set by user",
+        "suggested_action": None,
+    }
+
+    db.execute(
+        "UPDATE transient_emails SET metadata = ? WHERE id = ?",
+        (json.dumps(metadata), email_id),
+    )
+    db.commit()
+
+    return TriageActionResponse(
+        status="updated",
+        email_id=email_id,
+        triage_status=request.status,
+        triaged_at=triaged_at,
+    )
+
+
+@router.post("/emails/{email_id}/archive", response_model=TriageActionResponse)
+async def archive_email(email_id: str) -> TriageActionResponse:
+    """Archive an email (soft delete)."""
+    return await update_triage(
+        email_id,
+        UpdateTriageRequest(status="archived", notes="User archived"),
+    )
+
+
+@router.post("/emails/{email_id}/mark-action-required", response_model=TriageActionResponse)
+async def mark_action_required(email_id: str) -> TriageActionResponse:
+    """Mark email as requiring action."""
+    return await update_triage(
+        email_id,
+        UpdateTriageRequest(status="action_required"),
+    )
+
+
+@router.post("/emails/{email_id}/mark-informational", response_model=TriageActionResponse)
+async def mark_informational(email_id: str) -> TriageActionResponse:
+    """Mark email as informational only."""
+    return await update_triage(
+        email_id,
+        UpdateTriageRequest(status="informational"),
     )
 
 

@@ -85,6 +85,24 @@ class TransientEmailList(BaseModel):
 
 
 # =============================================================================
+# TRIAGE ACTIONS
+# =============================================================================
+
+class UpdateTriageRequest(BaseModel):
+    """Request to update email triage status."""
+    status: TriageStatus
+    notes: str | None = None
+
+
+class TriageActionResponse(BaseModel):
+    """Response from triage action."""
+    status: str
+    email_id: str
+    triage_status: TriageStatus
+    triaged_at: str
+
+
+# =============================================================================
 # INGESTION
 # =============================================================================
 
