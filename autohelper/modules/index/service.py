@@ -323,32 +323,37 @@ class IndexService:
             for rel_path, stat in potential_new_files:
                 matched_target = None
                 
-                # Try to find a rename match
-                candidates = [m for m in missing_by_size.get(stat.size, []) if m["file_id"] not in processed_missing_ids]
-                
-                if candidates:
-                    try:
-                        # Hash the new file
-                        current_hash = hasher.hash_file(root_path / rel_path)
-                        
-                        # Filter candidates by hash
-                        hash_matches = [c for c in candidates if c["content_hash"] == current_hash]
-                        
-                        if hash_matches:
-                            # Resolve ambiguity
-                            target = self._resolve_rename_ambiguity(hash_matches, rel_path)
+                # Skip rename detection for offline files (OneDrive cloud-only)
+                # Hashing would trigger a download, which we want to avoid
+                if stat.is_offline:
+                    logger.debug(f"Skipping rename detection for offline file: {rel_path}")
+                else:
+                    # Try to find a rename match
+                    candidates = [m for m in missing_by_size.get(stat.size, []) if m["file_id"] not in processed_missing_ids]
+                    
+                    if candidates:
+                        try:
+                            # Hash the new file
+                            current_hash = hasher.hash_file(root_path / rel_path)
                             
-                            if target:
-                                # Check Registry (Refs)
-                                is_referenced = self.db.execute(
-                                    "SELECT 1 FROM refs WHERE file_id = ?", 
-                                    (target["file_id"],)
-                                ).fetchone()
+                            # Filter candidates by hash
+                            hash_matches = [c for c in candidates if c["content_hash"] == current_hash]
+                            
+                            if hash_matches:
+                                # Resolve ambiguity
+                                target = self._resolve_rename_ambiguity(hash_matches, rel_path)
                                 
-                                if is_referenced:
-                                    matched_target = target
-                    except Exception:
-                        pass # Hash fail -> treat as new
+                                if target:
+                                    # Check Registry (Refs)
+                                    is_referenced = self.db.execute(
+                                        "SELECT 1 FROM refs WHERE file_id = ?", 
+                                        (target["file_id"],)
+                                    ).fetchone()
+                                    
+                                    if is_referenced:
+                                        matched_target = target
+                        except Exception:
+                            pass # Hash fail -> treat as new
                 
                 if matched_target:
                     # Execute Rename
@@ -442,16 +447,19 @@ class IndexService:
         """Insert or update a file record."""
         canonical_path = str(root_path / rel_path)
         
-        # Calculate hash if needed
-        # Policy: < 10MB always hash? Or only if requested?
-        # M1 spec: "Keep hashing optional for now; add in incremental issue"
-        # I will hash if force_hash is True OR if it's small (<1MB) to be helpful
-        content_hash = None
-        if force_hash or stat.size < 1_000_000:  # 1MB
+        # OneDrive Files On-Demand: skip hashing for offline (cloud-only) files
+        # Reading the file would trigger a download, which we want to avoid
+        if stat.is_offline:
+            logger.debug(f"Skipping hash for offline file: {rel_path}")
+            content_hash = None
+        elif force_hash or stat.size < 1_000_000:  # 1MB
+            # Calculate hash if needed
             try:
                 content_hash = hasher.hash_file(root_path / rel_path)
             except Exception:
-                pass
+                content_hash = None
+        else:
+            content_hash = None
         
         if existing_id:
             # Update

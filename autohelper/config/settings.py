@@ -34,11 +34,26 @@ class Settings(BaseSettings):
     # Security
     block_symlinks: bool = True
     
+    # OneDrive Files On-Demand detection (Windows only)
+    onedrive_detection: bool = True
+    
     # Logging
     log_level: str = "INFO"
     
     # CORS
     cors_origins: list[str] = Field(default=["http://localhost:5173", "http://localhost:3000"])
+    
+    # Mail Polling
+    mail_enabled: bool = False
+    mail_poll_interval: int = 30  # seconds
+    mail_output_path: Path = Field(default_factory=lambda: Path(Path.home() / "OneDrive" / "Emails"))
+    mail_ingest_path: Path = Field(default_factory=lambda: Path(Path.home() / "Documents" / "AutoHelper" / "Ingest"))
+    
+    # Context Layer / External Data Sources
+    autoart_api_url: str = "http://localhost:3000"
+    autoart_api_key: str = ""  # Optional API key for AutoArt
+    autoart_session_id: str = ""  # Session ID from AutoArt pairing (Monday token proxied via this)
+    context_providers: list[str] = Field(default=["autoart", "monday"])  # Priority order
     
     def get_allowed_roots(self) -> list[Path]:
         """Parse and validate allowed root paths."""

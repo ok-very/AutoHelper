@@ -20,6 +20,7 @@ from autohelper.modules.health.router import router as health_router
 from autohelper.modules.index.router import router as index_router
 from autohelper.modules.search.router import router as search_router
 from autohelper.modules.reference.router import router as ref_router
+from autohelper.modules.mail.router import router as mail_router
 from autohelper.shared.errors import AutoHelperError
 from autohelper.shared.ids import generate_request_id
 from autohelper.shared.logging import (
@@ -53,10 +54,15 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     
     logger.info("AutoHelper started")
     
+    # Start Mail Service
+    from autohelper.modules.mail import MailService
+    MailService().start()
+    
     yield
     
     # Shutdown
     logger.info("Shutting down AutoHelper...")
+    MailService().stop()
     db = get_db()
     db.close()
     logger.info("AutoHelper stopped")
@@ -134,6 +140,7 @@ def build_app(settings: Settings | None = None) -> FastAPI:
     app.include_router(index_router)
     app.include_router(search_router)
     app.include_router(ref_router)
+    app.include_router(mail_router)
     
     # Root endpoint
     @app.get("/")
