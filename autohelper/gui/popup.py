@@ -273,6 +273,41 @@ def get_window_class():
             
             layout.addWidget(metrics)
             
+            # AutoArt Connection Section
+            autoart_frame = QFrame()
+            autoart_frame.setStyleSheet("background: white; border: 1px solid #eceff1; border-radius: 4px;")
+            aa_layout = QVBoxLayout(autoart_frame)
+            
+            aa_header = QLabel("AutoArt Connection")
+            aa_header.setStyleSheet("font-weight: bold;")
+            aa_layout.addWidget(aa_header)
+            aa_layout.addWidget(QLabel("Connect to sync Monday.com data", styleSheet="color: #78909c; font-size: 11px;"))
+            
+            # Connection status
+            session_id = self.current_config.get("autoart_session_id", "")
+            if session_id:
+                self.lbl_context_status = QLabel("✓ Connected to AutoArt")
+                self.lbl_context_status.setStyleSheet("color: #4caf50; font-weight: bold;")
+            else:
+                self.lbl_context_status = QLabel("⚪ Not connected")
+                self.lbl_context_status.setStyleSheet("color: #90a4ae;")
+            aa_layout.addWidget(self.lbl_context_status)
+            
+            # Pairing code input
+            row_code = QHBoxLayout()
+            self.txt_pairing_code = QLineEdit()
+            self.txt_pairing_code.setPlaceholderText("Enter 6-digit code from AutoArt...")
+            self.txt_pairing_code.setMaxLength(6)
+            row_code.addWidget(self.txt_pairing_code)
+            
+            btn_pair = QPushButton("Connect")
+            btn_pair.setFixedWidth(80)
+            btn_pair.clicked.connect(self.pair_with_autoart)
+            row_code.addWidget(btn_pair)
+            aa_layout.addLayout(row_code)
+            
+            layout.addWidget(autoart_frame)
+            
             # Actions
             layout.addWidget(QLabel("Index Operations"))
             
@@ -324,40 +359,7 @@ def get_window_class():
             
             layout.addWidget(status_grp)
             
-            # 2. AutoArt Connection Section
-            context_grp = QFrame()
-            context_grp.setStyleSheet("background: white; border: 1px solid #eceff1; border-radius: 4px;")
-            c_layout = QVBoxLayout(context_grp)
-            
-            c_layout.addWidget(QLabel("AutoArt Connection"))
-            c_layout.addWidget(QLabel("Connect to AutoArt to access Monday.com data", styleSheet="color: #78909c; font-size: 11px;"))
-            
-            # Show current connection status
-            session_id = self.current_config.get("autoart_session_id", "")
-            if session_id:
-                self.lbl_context_status = QLabel("✓ Connected to AutoArt")
-                self.lbl_context_status.setStyleSheet("color: #4caf50;")
-            else:
-                self.lbl_context_status = QLabel("Not connected")
-                self.lbl_context_status.setStyleSheet("color: #90a4ae; font-style: italic;")
-            c_layout.addWidget(self.lbl_context_status)
-            
-            # Pairing code input
-            row_code = QHBoxLayout()
-            row_code.addWidget(QLabel("Pairing Code:"))
-            self.txt_pairing_code = QLineEdit()
-            self.txt_pairing_code.setPlaceholderText("Enter 6-digit code from AutoArt...")
-            self.txt_pairing_code.setMaxLength(6)
-            row_code.addWidget(self.txt_pairing_code)
-            c_layout.addLayout(row_code)
-            
-            btn_pair = QPushButton("Connect")
-            btn_pair.clicked.connect(self.pair_with_autoart)
-            c_layout.addWidget(btn_pair)
-            
-            layout.addWidget(context_grp)
-            
-            # 3. Ingestion Section
+            # 2. Ingestion Section (AutoArt connection moved to Status tab)
             ingest_grp = QFrame()
             ingest_grp.setStyleSheet("background: white; border: 1px solid #eceff1; border-radius: 4px;")
             i_layout = QVBoxLayout(ingest_grp)
