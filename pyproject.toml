@@ -21,6 +21,7 @@ dependencies = [
     # Mail Module
     "requests>=2.31.0",
     "google-generativeai>=0.3.0",
+    "playwright>=1.40.0",
 ]
 
 [project.optional-dependencies]

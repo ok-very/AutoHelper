@@ -52,6 +52,9 @@ class Settings(BaseSettings):
     autoart_session_id: str = ""  # Session ID from AutoArt pairing (Monday token proxied via this)
     context_providers: list[str] = Field(default=["autoart", "monday"])  # Priority order
     
+    # Gemini AI (server-side key for review/repair)
+    gemini_api_key: str = ""  # Set via AUTOHELPER_GEMINI_API_KEY env var
+    
     def get_allowed_roots(self) -> list[Path]:
         """Parse and validate allowed root paths."""
         return [Path(r).resolve() for r in self.allowed_roots if r]
