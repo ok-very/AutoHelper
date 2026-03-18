@@ -258,20 +258,28 @@ def get_preamble_html(uid: str) -> str | None:
 
 
 def list_projects() -> list[dict[str, Any]]:
-    """Return summary list of all projects."""
+    """Return summary list of all projects with validation diagnostics."""
     from .pipeline.processor import derive_metadata
+    from .pipeline.validator import validate_all
 
     _ensure_data_dir()
     seed_if_empty()
 
     projects = load_all_projects()
+    project_list = [p for p in projects if p.get("type") == "project"]
+
+    # Run batch validation (includes cross-project checks like duplicates)
+    all_diags = validate_all(project_list)
+
     summaries = []
-    for p in projects:
-        if p.get("type") not in ("project",):
-            continue
+    for p in project_list:
         meta = derive_metadata(p)
+        uid = p["uid"]
+        diags = all_diags.get(uid, [])
+        errors = [d for d in diags if d.level == "error"]
+        warnings = [d for d in diags if d.level == "warning"]
         summaries.append({
-            "uid": p["uid"],
+            "uid": uid,
             "slug": p.get("slug", ""),
             "client": p.get("fields", {}).get("client", "TBC"),
             "project_name": p.get("fields", {}).get("project_name", "TBC"),
@@ -279,6 +287,11 @@ def list_projects() -> list[dict[str, Any]]:
             "phase": meta["bfa_phase_canonical"],
             "owner_team": p.get("fields", {}).get("owner_team", "BFA"),
             "status": p.get("status", "active"),
+            "validation": {
+                "error_count": len(errors),
+                "warning_count": len(warnings),
+                "items": [d.to_dict() for d in diags],
+            },
         })
     return summaries
 

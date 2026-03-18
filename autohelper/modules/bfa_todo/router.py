@@ -99,11 +99,15 @@ async def import_excel(req: ImportExcelRequest) -> dict[str, Any]:
 
 class UpdateProjectRequest(BaseModel):
     """Editable fields for a BFA project."""
-    next_steps: str | None = None
-    contacts_text: str | None = None
-    artists_text: str | None = None
+    client: str | None = None
+    project_name: str | None = None
+    city: str | None = None
     phase: str | None = None
     owner_team: str | None = None
+    contacts_text: str | None = None
+    artists_text: str | None = None
+    install_date: str | None = None
+    next_steps: str | None = None
 
 
 @router.put("/projects/{uid}")
