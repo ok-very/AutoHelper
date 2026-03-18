@@ -44,7 +44,8 @@ dist/
 .gemini/
 
 # Desktop / Electron
-desktop/autohelper/
+desktop/autohelper/_internal/
+desktop/autohelper/*.exe
 desktop/.vite/
 desktop/out/
 
