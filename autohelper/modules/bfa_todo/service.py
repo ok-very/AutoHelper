@@ -13,83 +13,73 @@ from autohelper.shared.paths import data_dir
 
 from .google_client import GoogleDocsClient, GoogleClientError
 from .pipeline import config as pipeline_config
-from .pipeline.store import (
-    load_all_projects,
-    load_index,
-    load_project,
-    save_aliases,
-    save_index,
-    save_project,
-    load_aliases,
-)
+from .pipeline.repo import BfaProjectRepo, BfaAliasRepo, seed_from_yaml
 
 logger = get_logger(__name__)
 
 # Source data for seeding
 _BFA_TODO_SOURCE = Path("C:/Users/Neal/dev/BFA-todo/data")
 
+# Singleton repos
+_project_repo = BfaProjectRepo()
+_alias_repo = BfaAliasRepo()
+
 
 def _ensure_data_dir() -> Path:
-    """Ensure the bfa_todo data directory exists."""
+    """Ensure output directories exist (site, assets)."""
     d = pipeline_config.DATA_DIR
     d.mkdir(parents=True, exist_ok=True)
-    pipeline_config.PROJECTS_DIR.mkdir(parents=True, exist_ok=True)
+    pipeline_config.SITE_DIR.mkdir(parents=True, exist_ok=True)
+    pipeline_config.ASSETS_DIR.mkdir(parents=True, exist_ok=True)
     return d
 
 
-def seed_if_empty() -> bool:
-    """Copy seed data from BFA-todo if the data directory is empty.
+def _ensure_seeded() -> None:
+    """Seed SQLite from YAML if the bfa_projects table is empty."""
+    if _project_repo.count(include_archived=True) > 0:
+        return
 
-    Returns True if seeding was performed.
-    """
+    # Try seeding from existing YAML data directory
     _ensure_data_dir()
+    pipeline_config.PROJECTS_DIR.mkdir(parents=True, exist_ok=True)
+
+    # First try: copy from BFA-todo source if YAML dir is empty
     index_path = pipeline_config.DATA_DIR / "index.yaml"
-    if index_path.exists():
-        return False
+    if not index_path.exists() and _BFA_TODO_SOURCE.exists():
+        src_index = _BFA_TODO_SOURCE / "index.yaml"
+        if src_index.exists():
+            shutil.copy2(str(src_index), str(index_path))
+        src_aliases = _BFA_TODO_SOURCE / "aliases.yaml"
+        if src_aliases.exists():
+            shutil.copy2(str(src_aliases), str(pipeline_config.ALIASES_FILE))
+        src_projects = _BFA_TODO_SOURCE / "projects"
+        if src_projects.exists():
+            for f in src_projects.glob("*.yaml"):
+                shutil.copy2(str(f), str(pipeline_config.PROJECTS_DIR / f.name))
+        logger.info("Copied YAML seed data from %s", _BFA_TODO_SOURCE)
 
-    if not _BFA_TODO_SOURCE.exists():
-        logger.warning("BFA-todo source not found at %s, skipping seed", _BFA_TODO_SOURCE)
-        return False
-
-    # Copy index.yaml
-    src_index = _BFA_TODO_SOURCE / "index.yaml"
-    if src_index.exists():
-        shutil.copy2(str(src_index), str(index_path))
-
-    # Copy aliases.yaml
-    src_aliases = _BFA_TODO_SOURCE / "aliases.yaml"
-    if src_aliases.exists():
-        shutil.copy2(str(src_aliases), str(pipeline_config.ALIASES_FILE))
-
-    # Copy project files
-    src_projects = _BFA_TODO_SOURCE / "projects"
-    if src_projects.exists():
-        for f in src_projects.glob("*.yaml"):
-            shutil.copy2(str(f), str(pipeline_config.PROJECTS_DIR / f.name))
-
-    logger.info("Seeded BFA To Do data from %s", _BFA_TODO_SOURCE)
-    return True
+    # Now seed SQLite from whatever YAML exists
+    count = seed_from_yaml()
+    if count:
+        logger.info("Seeded %d BFA projects into SQLite from YAML", count)
 
 
 def import_from_html_dir(path: str) -> dict[str, Any]:
-    """Force re-import YAML data from a BFA HTML source directory."""
+    """Force re-import YAML data from a BFA HTML source directory, then seed into SQLite."""
     src = Path(path)
     if not src.exists():
         raise FileNotFoundError(f"Directory not found: {path}")
 
     _ensure_data_dir()
+    pipeline_config.PROJECTS_DIR.mkdir(parents=True, exist_ok=True)
 
-    # Copy index.yaml
+    # Copy YAML files to local data dir
     src_index = src / "index.yaml"
     if src_index.exists():
         shutil.copy2(str(src_index), str(pipeline_config.DATA_DIR / "index.yaml"))
-
-    # Copy aliases.yaml
     src_aliases = src / "aliases.yaml"
     if src_aliases.exists():
         shutil.copy2(str(src_aliases), str(pipeline_config.ALIASES_FILE))
-
-    # Copy project files
     src_projects = src / "projects"
     count = 0
     if src_projects.exists():
@@ -97,6 +87,8 @@ def import_from_html_dir(path: str) -> dict[str, Any]:
             shutil.copy2(str(f), str(pipeline_config.PROJECTS_DIR / f.name))
             count += 1
 
+    # Re-seed SQLite from the updated YAML
+    seed_from_yaml()
     logger.info("Imported %d project files from %s", count, path)
     return {"project_count": count, "source": path}
 
@@ -105,7 +97,7 @@ def import_from_html_file(filepath: str) -> dict[str, Any]:
     """Import from a raw Google Docs HTML export through the full pipeline.
 
     Parses the HTML, extracts gdocs CSS, processes projects with StyleResolver,
-    saves YAML + CSS to disk, and runs a full render.
+    saves to SQLite, and runs a full render.
     """
     src = Path(filepath)
     if not src.exists():
@@ -127,14 +119,10 @@ def import_from_html_file(filepath: str) -> dict[str, Any]:
     for p in projects:
         processed.append(process_project(p, resolver=resolver))
 
-    # Save YAML (runs are stripped by save_project — that's correct,
-    # they're recomputed at render time from .html + gdocs CSS)
-    for p in processed:
-        save_project(p)
-    save_index(processed)
+    # Save to SQLite (transaction-wrapped batch)
+    _project_repo.upsert_batch(processed)
 
     # Persist gdocs CSS so render_pipeline() and render_one() can reload it
-    pipeline_config.ASSETS_DIR.mkdir(parents=True, exist_ok=True)
     (pipeline_config.ASSETS_DIR / "gdocs.css").write_text(gdocs_css, encoding="utf-8")
 
     # Run full render to produce canonical.css, index_pasteable.html, etc.
@@ -147,11 +135,9 @@ def import_from_html_file(filepath: str) -> dict[str, Any]:
 
 def get_status() -> dict[str, Any]:
     """Return pipeline status summary."""
-    _ensure_data_dir()
-    seed_if_empty()
+    _ensure_seeded()
 
-    index = load_index()
-    project_count = index.get("project_count", 0)
+    project_count = _project_repo.count()
 
     # Check for rendered output
     site_dir = pipeline_config.SITE_DIR
@@ -174,17 +160,13 @@ def get_status() -> dict[str, Any]:
 
 
 def _collect_preambles() -> tuple[dict[str, Any] | None, dict[str, Any] | None]:
-    """Load preamble blocks, merging extra preamble snippets into preamble-lists.
-
-    Returns (overview, proposals) where overview is the first type=preamble block
-    and proposals is the preamble-lists block with any extra preamble content appended.
-    """
-    projects = load_all_projects()
+    """Load preamble blocks, merging extra preamble snippets into preamble-lists."""
+    preamble_items = _project_repo.get_by_type("preamble", "preamble-lists")
     overview = None
     proposals = None
     extras: list[dict[str, Any]] = []
 
-    for p in projects:
+    for p in preamble_items:
         ptype = p.get("type")
         if ptype == "preamble":
             if overview is None:
@@ -215,8 +197,7 @@ def _collect_preambles() -> tuple[dict[str, Any] | None, dict[str, Any] | None]:
 
 def list_preambles() -> list[dict[str, Any]]:
     """Return summary list of preamble blocks (2 items: overview + proposals)."""
-    _ensure_data_dir()
-    seed_if_empty()
+    _ensure_seeded()
 
     overview, proposals = _collect_preambles()
     result = []
@@ -239,10 +220,7 @@ def list_preambles() -> list[dict[str, Any]]:
 
 def get_preamble_html(uid: str) -> str | None:
     """Return fully-inlined HTML for a single preamble block."""
-    _ensure_data_dir()
-
     overview, proposals = _collect_preambles()
-    # Match by uid against the two merged blocks
     target = None
     if overview and overview["uid"] == uid:
         target = overview
@@ -253,7 +231,6 @@ def get_preamble_html(uid: str) -> str | None:
         return None
 
     from .pipeline.renderer import render_one
-
     return render_one(target)
 
 
@@ -262,11 +239,10 @@ def list_projects() -> list[dict[str, Any]]:
     from .pipeline.processor import derive_metadata
     from .pipeline.validator import validate_all
 
-    _ensure_data_dir()
-    seed_if_empty()
+    _ensure_seeded()
 
-    projects = load_all_projects()
-    project_list = [p for p in projects if p.get("type") == "project"]
+    all_projects = _project_repo.get_all()
+    project_list = [p for p in all_projects if p.get("type") == "project"]
 
     # Run batch validation (includes cross-project checks like duplicates)
     all_diags = validate_all(project_list)
@@ -301,23 +277,14 @@ def get_project(uid: str) -> dict[str, Any] | None:
     and section_meta for the composition view."""
     from .pipeline.processor import derive_metadata, get_section_meta
 
-    _ensure_data_dir()
-    project = load_project(uid)
+    project = _project_repo.get(uid)
     if not project:
         return None
 
-    # Compute inline_html for each section so the frontend can render
-    # a faithful preview (bold, highlight, indentation) without running
-    # the full render pipeline first.
     _enrich_inline_html(project)
-
-    # Derived metadata (phase, contacts, artists, next_steps) from sections
     project["derived"] = derive_metadata(project)
-
-    # Editability metadata per section for the composition view
     project["section_meta"] = get_section_meta(project.get("sections", {}))
 
-    # Header inline_html for composition view
     header = project.get("header", {})
     header_text = header.get("text", "")
     if header_text and "inline_html" not in header:
@@ -332,11 +299,7 @@ def get_project(uid: str) -> dict[str, Any] | None:
 
 
 def _enrich_inline_html(project: dict[str, Any]) -> None:
-    """Compute inline_html for sections that have raw html but no inline_html.
-
-    Uses gdocs CSS from disk (if available) so class-based styles
-    (bold, highlight, etc.) resolve the same as the full render pipeline.
-    """
+    """Compute inline_html for sections that have raw html but no inline_html."""
     from .pipeline.style_resolver import StyleResolver, walk_html_for_runs, runs_to_inline_html
 
     gdocs_css = ""
@@ -353,32 +316,24 @@ def _enrich_inline_html(project: dict[str, Any]) -> None:
 
 
 def get_project_html(uid: str) -> str | None:
-    """Return fully-inlined HTML for a single project via the render pipeline.
-
-    Uses the same template + premailer path as the full site render so the
-    iframe preview matches index_pasteable.html exactly.
-    """
-    _ensure_data_dir()
-    project = load_project(uid)
+    """Return fully-inlined HTML for a single project via the render pipeline."""
+    project = _project_repo.get(uid)
     if not project or project.get("type") != "project":
         return None
 
     from .pipeline.renderer import render_one
-
     return render_one(project)
 
 
 def update_project(uid: str, changes: dict[str, Any]) -> dict[str, Any] | None:
-    """Update editable fields on a project and persist to YAML."""
-    _ensure_data_dir()
-    project = load_project(uid)
+    """Update editable fields on a project and persist to SQLite."""
+    project = _project_repo.get(uid)
     if not project:
         return None
 
     fields = project.get("fields", {})
     sections = project.get("sections", {})
 
-    # Map editable keys to their storage locations
     field_keys = {"contacts_text", "artists_text", "owner_team"}
     section_keys = {"next_steps", "governance", "milestones", "fabrication"}
 
@@ -396,12 +351,9 @@ def update_project(uid: str, changes: dict[str, Any]) -> dict[str, Any] | None:
 
     project["fields"] = fields
     project["sections"] = sections
-    save_project(project)
+    _project_repo.upsert(project)
 
-    return {
-        "uid": uid,
-        "updated": list(changes.keys()),
-    }
+    return {"uid": uid, "updated": list(changes.keys())}
 
 
 def _html_to_text(html: str) -> str:
@@ -420,13 +372,8 @@ def update_project_sections(
     section_htmls: dict[str, str],
     header_html: str | None = None,
 ) -> dict[str, Any] | None:
-    """Update section HTML from contenteditable edits and persist to YAML.
-
-    Recomputes plain text from the edited HTML so downstream consumers
-    (GDocs export, next_steps parser) stay in sync.
-    """
-    _ensure_data_dir()
-    project = load_project(uid)
+    """Update section HTML from contenteditable edits and persist to SQLite."""
+    project = _project_repo.get(uid)
     if not project:
         return None
 
@@ -441,7 +388,7 @@ def update_project_sections(
         project["header"]["text"] = _html_to_text(header_html)
 
     project["sections"] = sections
-    save_project(project)
+    _project_repo.upsert(project)
 
     return {"uid": uid, "updated_sections": list(section_htmls.keys())}
 
@@ -451,29 +398,22 @@ def update_project_section(
     section_name: str,
     html: str,
 ) -> dict[str, Any] | None:
-    """Update a single section's HTML and persist to YAML.
-
-    Used by the composition view for per-section saves.
-    Returns the updated project with re-enriched inline_html.
-    """
+    """Update a single section's HTML and persist to SQLite."""
     from .pipeline.processor import derive_metadata, get_section_meta
 
-    _ensure_data_dir()
-    project = load_project(uid)
+    project = _project_repo.get(uid)
     if not project:
         return None
 
     sections = project.get("sections", {})
     if section_name not in sections:
-        # Allow creating new sections (e.g. adding next_steps to a project that didn't have them)
         sections[section_name] = {}
 
     sections[section_name]["html"] = html
     sections[section_name]["text"] = _html_to_text(html)
     project["sections"] = sections
-    save_project(project)
+    _project_repo.upsert(project)
 
-    # Re-enrich and return full project for the composition view
     _enrich_inline_html(project)
     project["derived"] = derive_metadata(project)
     project["section_meta"] = get_section_meta(sections)
@@ -482,14 +422,10 @@ def update_project_section(
 
 
 def update_project_phase(uid: str, phase: str) -> dict[str, Any] | None:
-    """Update a project's phase via dropdown selection.
-
-    Updates both the bfa_phase section and the derived canonical phase.
-    """
+    """Update a project's phase via dropdown selection."""
     from .pipeline.processor import derive_metadata, get_section_meta
 
-    _ensure_data_dir()
-    project = load_project(uid)
+    project = _project_repo.get(uid)
     if not project:
         return None
 
@@ -500,9 +436,8 @@ def update_project_phase(uid: str, phase: str) -> dict[str, Any] | None:
     sections["bfa_phase"]["text"] = phase
     sections["bfa_phase"]["html"] = f'<p><strong>Project Status:</strong> {phase}</p>'
     project["sections"] = sections
-    # Keep legacy key in sync during migration
     project["bfa_phase_canonical"] = phase
-    save_project(project)
+    _project_repo.upsert(project)
 
     _enrich_inline_html(project)
     project["derived"] = derive_metadata(project)
@@ -512,18 +447,15 @@ def update_project_phase(uid: str, phase: str) -> dict[str, Any] | None:
 
 
 def render_pipeline() -> dict[str, Any]:
-    """Run the render pipeline: load YAML -> render HTML + JSON + GDocs payloads."""
+    """Run the render pipeline: load from SQLite -> render HTML + JSON + GDocs payloads."""
     from .pipeline.renderer import render_all
-    from .pipeline.style_resolver import StyleResolver
 
-    _ensure_data_dir()
-    seed_if_empty()
+    _ensure_seeded()
 
-    projects = load_all_projects(include_archived=False)
+    projects = _project_repo.get_all(include_archived=False)
     if not projects:
         return {"error": "No projects found", "outputs": {}}
 
-    # Load gdocs CSS from disk (persisted during HTML import)
     gdocs_css = ""
     gdocs_css_path = pipeline_config.ASSETS_DIR / "gdocs.css"
     if gdocs_css_path.exists():
@@ -548,20 +480,15 @@ def import_excel(filepath: str) -> dict[str, Any]:
     from .pipeline.matcher import match
     from .pipeline.differ import diff_matched, diff_rollups
 
-    _ensure_data_dir()
-    seed_if_empty()
+    _ensure_seeded()
 
-    # Parse Excel
     excel_rows = _import_excel(filepath)
 
-    # Load existing data
-    projects = load_all_projects(include_archived=False)
-    aliases = load_aliases()
+    projects = _project_repo.get_all(include_archived=False)
+    aliases = _alias_repo.get()
 
-    # Match
     match_report = match(excel_rows, projects, aliases)
 
-    # Diff matched pairs
     yaml_by_uid = {p["uid"]: p for p in projects if p.get("type") == "project"}
     diff_report = diff_matched(match_report["matched"], yaml_by_uid)
     rollup_diffs = diff_rollups(match_report.get("rollup_groups", []), yaml_by_uid)
@@ -590,7 +517,6 @@ async def _deploy_payloads(
     except GoogleClientError as e:
         return {"error": str(e)}
 
-    # Build flat text index for anchor lookup
     doc_text = ""
     for element in doc.get("body", {}).get("content", []):
         paragraph = element.get("paragraph")
@@ -615,7 +541,6 @@ async def _deploy_payloads(
             errors.append({"slug": slug, "error": f"Anchor not found: {anchor[:60]}"})
             continue
 
-        # Resolve __COMPUTED__ and __OFFSET__ placeholders
         insert_idx = pos + len(anchor) + 1
         requests = []
         for req in payload["requests"]:
@@ -624,7 +549,6 @@ async def _deploy_payloads(
             req_str = req_str.replace('"__OFFSET__+', '"')
             resolved = json.loads(req_str)
 
-            # Adjust offset-based indices
             if "updateTextStyle" in resolved:
                 rng = resolved["updateTextStyle"]["range"]
                 for key in ("startIndex", "endIndex"):
