@@ -13,7 +13,10 @@ run = "python -m uvicorn autohelper.app:build_app --host 127.0.0.1 --port 8100 -
 
 [tasks.venv]
 description = "Create/update venv with editable install"
-run = "python -m venv .venv && .venv/Scripts/pip install -e ."
+run = [
+  "python -m venv .venv",
+  "python -m pip install -e .",
+]
 
 [tasks.validate]
 description = "Test ClickUp connection"
@@ -26,3 +29,11 @@ run = "pnpm --filter autohelper-ui build"
 [tasks."ui:dev"]
 description = "Watch UI and rebuild on changes"
 run = "pnpm --filter autohelper-ui dev"
+
+[tasks.build]
+description = "PyInstaller build → desktop/autohelper/"
+run = "python scripts/build_installer.py"
+
+[tasks."build:exe"]
+description = "PyInstaller only (no copy to desktop)"
+run = "python -m PyInstaller scripts/autohelper.spec --clean --noconfirm"

@@ -1,0 +1,133 @@
+name: Build AutoHelper MSIX
+
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write  # Required for creating releases
+
+jobs:
+  build:
+    runs-on: windows-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: "pip"
+          cache-dependency-path: pyproject.toml
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e ".[dev]"
+          pip install pyinstaller pillow
+
+      - name: Run tests
+        run: pytest tests/ -v --tb=short
+
+      - name: Extract version from tag
+        id: version
+        shell: bash
+        run: echo "version=${GITHUB_REF_NAME#v}" >> "$GITHUB_OUTPUT"
+
+      - name: Update version in __init__.py
+        run: |
+          $version = "${{ steps.version.outputs.version }}"
+          $initFile = "autohelper/__init__.py"
+          (Get-Content $initFile) -replace '__version__ = ".*"', "__version__ = `"$version`"" | Set-Content $initFile
+        shell: pwsh
+
+      - name: Build with PyInstaller
+        timeout-minutes: 25
+        run: |
+          # Prune PATH to Python + System32 only. PyInstaller uses PATH entries
+          # as extra DLL search dirs in find_binary_dependencies — the VS, SDK,
+          # Chocolatey, and Node dirs on CI runners massively slow the scan.
+          $pythonDir = Split-Path (Get-Command python).Source
+          $env:PATH = "$pythonDir;$pythonDir\Scripts;$env:SystemRoot\System32"
+          Write-Output "=== PATH for PyInstaller ==="
+          $env:PATH -split ";" | ForEach-Object { Write-Output "  $_" }
+          Write-Output "=== Starting PyInstaller ==="
+          $env:PYTHONUNBUFFERED = "1"
+          python -m PyInstaller scripts/autohelper.spec --clean --noconfirm --log-level INFO
+        shell: pwsh
+
+      - name: Verify PyInstaller output
+        run: |
+          if (!(Test-Path "dist/autohelper/autohelper.exe")) {
+            Write-Error "autohelper.exe not found in dist/"
+            exit 1
+          }
+          Write-Output "Build artifacts:"
+          Get-ChildItem -Path "dist/autohelper/" -Recurse | Where-Object { !$_.PSIsContainer } | Select-Object Length, FullName | Format-Table -AutoSize
+        shell: pwsh
+
+      - name: Decode signing certificate
+        run: |
+          $pfxBytes = [Convert]::FromBase64String("${{ secrets.AUTOHELPER_SIGN_PFX }}")
+          $pfxPath = Join-Path $env:RUNNER_TEMP "autohelper-sign.pfx"
+          [IO.File]::WriteAllBytes($pfxPath, $pfxBytes)
+          echo "PFX_PATH=$pfxPath" >> $env:GITHUB_ENV
+        shell: pwsh
+
+      - name: Build MSIX package
+        run: |
+          python scripts/build_installer.py `
+            --skip-pyinstaller `
+            --version "${{ steps.version.outputs.version }}" `
+            --pfx "$env:PFX_PATH" `
+            --pfx-password "${{ secrets.AUTOHELPER_SIGN_PFX_PASSWORD }}"
+        shell: pwsh
+
+      - name: Cleanup signing certificate
+        if: always()
+        run: |
+          if ($env:PFX_PATH -and (Test-Path $env:PFX_PATH)) { Remove-Item $env:PFX_PATH -Force }
+        shell: pwsh
+
+      - name: Upload MSIX artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: autohelper-msix
+          path: |
+            dist/AutoHelper-*.msix
+            dist/AutoHelper.appinstaller
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          name: AutoHelper ${{ steps.version.outputs.version }}
+          body: |
+            ## AutoHelper ${{ steps.version.outputs.version }}
+
+            ### Installation (first time)
+            1. Download `autohelper-sign.cer` and import it to trust the publisher:
+               ```powershell
+               Import-Certificate -FilePath autohelper-sign.cer -CertStoreLocation Cert:\LocalMachine\TrustedPeople
+               ```
+            2. Download and open `AutoHelper.appinstaller` — Windows handles the rest
+
+            ### Update
+            Updates are automatic. Windows checks for new versions every 24 hours on app launch.
+
+            ### What's included
+            - **AutoHelper** — CLI and service entry point (Start menu)
+            - **AutoHelper Tray** — System tray icon (auto-starts on login)
+            - Dashboard at http://127.0.0.1:8100/dashboard
+
+            ### Requirements
+            - Windows 10 1809+ / Windows 11
+            - PowerShell 5.1+ (for Exchange sync)
+          files: |
+            dist/AutoHelper-*.msix
+            dist/AutoHelper.appinstaller
+            scripts/msix/autohelper-sign.cer
+          draft: false
+          prerelease: false

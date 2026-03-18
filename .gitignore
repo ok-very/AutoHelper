@@ -52,3 +52,4 @@ desktop/out/
 # AutoHelper specific
 autohelper/_collected/
 autohelper/gui/manifests/*/thumbs/
+build/
