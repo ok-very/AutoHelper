@@ -287,6 +287,7 @@ export function BfaTodoPage() {
               showIssuesOnly={showIssuesOnly} onShowIssuesOnlyChange={setShowIssuesOnly}
               phases={phases} leads={leads} cities={cities}
               onHoldCount={onHoldCount} issueCount={issueCount}
+              memberMap={memberMap}
             />
 
             {/* Status bar */}
