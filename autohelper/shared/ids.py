@@ -20,6 +20,11 @@ def generate_request_id() -> str:
     return f"req_{uuid.uuid4().hex[:16]}"
 
 
+def generate_project_id() -> str:
+    """Generate a project ID."""
+    return f"proj_{uuid.uuid4().hex[:12]}"
+
+
 def generate_file_id() -> str:
     """Generate a file ID."""
     return f"f_{uuid.uuid4().hex[:12]}"

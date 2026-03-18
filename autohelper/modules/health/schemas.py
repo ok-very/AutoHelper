@@ -7,15 +7,16 @@ from pydantic import BaseModel
 
 class HealthResponse(BaseModel):
     """Health check response."""
-    
+
     status: str
     timestamp: datetime
     version: str
+    mode: str
 
 
 class RootStatus(BaseModel):
     """Status of a configured root."""
-    
+
     root_id: str
     path: str
     enabled: bool
@@ -25,7 +26,7 @@ class RootStatus(BaseModel):
 
 class IndexStatus(BaseModel):
     """Index status summary."""
-    
+
     last_run_id: str | None
     last_run_at: datetime | None
     last_run_status: str | None
@@ -35,14 +36,14 @@ class IndexStatus(BaseModel):
 
 class MigrationStatus(BaseModel):
     """Migration status."""
-    
+
     applied_count: int
     pending_count: int
 
 
 class StatusResponse(BaseModel):
     """Full status response."""
-    
+
     status: str
     version: str
     timestamp: datetime

@@ -1,0 +1,64 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Reconciliation — AutoHelper</title>
+  <link rel="stylesheet" href="/artists-dashboard/static/shared.css">
+</head>
+<body>
+  <div id="app">
+    <nav class="artist-nav">
+      <a href="/artists-settings" class="nav-link">Settings</a>
+      <a href="/artists-health" class="nav-link">Health</a>
+      <a href="/artists-recon" class="nav-link active">Reconciliation</a>
+      <a href="/artists-dashboard" class="nav-link">Directory</a>
+    </nav>
+
+    <header class="header">
+      <h1>Reconciliation</h1>
+      <div class="header-actions">
+        <button id="btn-reload" class="btn btn-ghost">&#x27F3; Reload</button>
+      </div>
+    </header>
+
+    <!-- Engagement pipeline -->
+    <div class="health-card full-width" style="margin-bottom:16px">
+      <h3>Engagement Pipeline</h3>
+      <div class="recon-tabs">
+        <button class="recon-tab active" data-recon="orphan_eois">Orphan EOIs <span class="recon-count" id="recon-count-eois">0</span></button>
+        <button class="recon-tab" data-recon="orphan_proposals">Orphan Proposals <span class="recon-count" id="recon-count-proposals">0</span></button>
+        <button class="recon-tab" data-recon="stalled_projects">Stalled <span class="recon-count" id="recon-count-stalled">0</span></button>
+        <button class="recon-tab" data-recon="fuzzy_matches">Fuzzy Matches <span class="recon-count" id="recon-count-fuzzy">0</span></button>
+        <button class="recon-tab" data-recon="panel_gaps">Panel Gaps <span class="recon-count" id="recon-count-panels">0</span></button>
+      </div>
+
+      <p style="font-size:11px;color:var(--fg-disabled);margin:8px 0">Data quality</p>
+      <div class="recon-tabs">
+        <button class="recon-tab" data-recon="duplicate_artists">Duplicate Names <span class="recon-count" id="recon-count-dupes">0</span></button>
+        <button class="recon-tab" data-recon="affiliation_variants">Affiliation Variants <span class="recon-count" id="recon-count-affs">0</span></button>
+        <button class="recon-tab" data-recon="identity_inconsistencies">Identity Dupes <span class="recon-count" id="recon-count-ids">0</span></button>
+        <button class="recon-tab" data-recon="alias_conflicts">Alias Conflicts <span class="recon-count" id="recon-count-aliases">0</span></button>
+        <button class="recon-tab" data-recon="location_variants">Location Variants <span class="recon-count" id="recon-count-locs">0</span></button>
+      </div>
+
+      <p style="font-size:11px;color:var(--fg-disabled);margin:8px 0">Unattributed</p>
+      <div class="recon-tabs">
+        <button class="recon-tab" data-recon="unattributed_files">Unattributed Files <span class="recon-count" id="recon-count-unattributed">0</span></button>
+      </div>
+
+      <div id="recon-content"><p class="empty">Loading...</p></div>
+    </div>
+  </div>
+
+  <script src="/artists-dashboard/static/nav.js"></script>
+  <script src="/artists-dashboard/static/recon.js"></script>
+  <script>
+    document.addEventListener("DOMContentLoaded", () => {
+      Recon.init();
+      Recon.load();
+      document.getElementById("btn-reload").addEventListener("click", () => Recon.load());
+    });
+  </script>
+</body>
+</html>

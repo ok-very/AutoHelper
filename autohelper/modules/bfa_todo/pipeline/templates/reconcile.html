@@ -1,0 +1,419 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>BFA Weekly Reconciliation</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; background: #fff; color: #222; padding: 20px 40px; line-height: 1.5; }
+  h1 { font-size: 1.5rem; margin-bottom: 4px; }
+  .subtitle { color: #666; margin-bottom: 20px; font-size: 0.9rem; }
+  .stats { background: #f5f5f5; padding: 12px 16px; border-radius: 6px; margin-bottom: 24px; display: flex; gap: 24px; flex-wrap: wrap; }
+  .stat { text-align: center; }
+  .stat-num { font-size: 1.8rem; font-weight: 700; }
+  .stat-label { font-size: 0.75rem; color: #666; text-transform: uppercase; }
+  section { margin-bottom: 32px; border: 1px solid #ddd; border-radius: 6px; overflow: hidden; }
+  .sec-header { background: #f8f8f8; padding: 12px 16px; cursor: pointer; display: flex; justify-content: space-between; align-items: center; user-select: none; }
+  .sec-header:hover { background: #eee; }
+  .sec-header h2 { font-size: 1.1rem; }
+  .sec-count { background: #333; color: #fff; border-radius: 12px; padding: 2px 10px; font-size: 0.8rem; }
+  .sec-body { padding: 0; display: none; }
+  .sec-body.open { display: block; }
+  .toolbar { padding: 8px 16px; background: #fafafa; border-bottom: 1px solid #eee; display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+  .toolbar button { font-size: 0.75rem; padding: 3px 10px; border: 1px solid #ccc; border-radius: 4px; background: #fff; cursor: pointer; }
+  .toolbar button:hover { background: #eee; }
+  .toolbar button.active-tb { background: #d4edda; border-color: #28a745; }
+  .summary-counter { margin-left: auto; font-size: 0.8rem; color: #666; }
+  table { width: 100%; border-collapse: collapse; }
+  th { text-align: left; font-size: 0.75rem; text-transform: uppercase; color: #888; padding: 6px 12px; border-bottom: 2px solid #eee; background: #fafafa; position: sticky; top: 0; z-index: 1; }
+  td { padding: 8px 12px; border-bottom: 1px solid #f0f0f0; font-size: 0.85rem; vertical-align: top; }
+  tr:hover { background: #f9f9f9; }
+  .mono { font-family: "SF Mono", "Consolas", monospace; font-size: 0.8rem; word-break: break-word; }
+  .old-val { color: #c00; }
+  .new-val { color: #080; font-weight: 600; }
+  .sev-info { border-left: 3px solid #4a90d9; }
+  .sev-warning { border-left: 3px solid #f5a623; background: #fffdf0; }
+  .sev-critical { border-left: 3px solid #d0021b; background: #fff5f5; }
+  .btn-group { display: flex; gap: 4px; }
+  .btn { padding: 4px 12px; border: 1px solid #ccc; border-radius: 4px; cursor: pointer; font-size: 0.75rem; background: #fff; }
+  .btn:hover { background: #eee; }
+  .btn.active-accept { background: #d4edda; border-color: #28a745; color: #155724; }
+  .btn.active-reject { background: #f8d7da; border-color: #dc3545; color: #721c24; }
+  .btn.active-keep { background: #d4edda; border-color: #28a745; color: #155724; }
+  .btn.active-archive { background: #fff3cd; border-color: #ffc107; color: #856404; }
+  .btn.active-confirm { background: #d4edda; border-color: #28a745; color: #155724; }
+  .btn.active-skip { background: #e2e3e5; border-color: #6c757d; color: #383d41; }
+  .btn.active-new { background: #cce5ff; border-color: #004085; color: #004085; }
+  .btn.active-ignore { background: #e2e3e5; border-color: #6c757d; color: #383d41; }
+  input[type=checkbox] { width: 16px; height: 16px; cursor: pointer; }
+  footer { position: sticky; bottom: 0; margin-top: 32px; padding: 20px; background: #f5f5f5; border-radius: 6px; display: flex; justify-content: space-between; align-items: center; border-top: 2px solid #ddd; z-index: 10; }
+  #submitBtn { padding: 10px 32px; font-size: 1rem; background: #28a745; color: #fff; border: none; border-radius: 6px; cursor: pointer; font-weight: 600; }
+  #submitBtn:hover { background: #218838; }
+  #cancelBtn { padding: 10px 24px; font-size: 0.9rem; background: #fff; border: 1px solid #ccc; border-radius: 6px; cursor: pointer; }
+  .loading { text-align: center; padding: 40px; color: #666; }
+  .score { font-family: monospace; font-weight: 700; }
+  .score-high { color: #28a745; }
+  .score-mid { color: #f5a623; }
+  .score-low { color: #dc3545; }
+  .project-group-header { background: #e8ecf0; }
+  .project-group-header td { font-weight: 700; padding: 6px 12px; font-size: 0.85rem; }
+  .project-group-header .btn { font-size: 0.7rem; padding: 2px 8px; }
+  .val-cell { max-width: 320px; overflow-wrap: break-word; }
+</style>
+</head>
+<body>
+
+<h1>BFA Weekly Reconciliation</h1>
+<p class="subtitle">Review changes from Monday.com Excel import</p>
+
+<div class="stats" id="statsBar">
+  <div class="stat"><div class="stat-num" id="statChanges">-</div><div class="stat-label">Field Changes</div></div>
+  <div class="stat"><div class="stat-num" id="statProjects">-</div><div class="stat-label">Projects Affected</div></div>
+  <div class="stat"><div class="stat-num" id="statNew">-</div><div class="stat-label">New Projects</div></div>
+  <div class="stat"><div class="stat-num" id="statPipelineOnly">-</div><div class="stat-label">Pipeline Only</div></div>
+  <div class="stat"><div class="stat-num" id="statAmbiguous">-</div><div class="stat-label">Ambiguous</div></div>
+  <div class="stat"><div class="stat-num" id="statRollups">-</div><div class="stat-label">Rollup Groups</div></div>
+</div>
+
+<div id="content"><div class="loading">Loading data...</div></div>
+
+<footer>
+  <div>
+    <span id="acceptedCount" style="font-size:1.2rem;font-weight:700">0</span> <span style="color:#666">changes accepted</span>
+    &nbsp; / <span id="rejectedCount" style="font-size:1.2rem;font-weight:700;color:#c00">0</span> <span style="color:#666">rejected</span>
+  </div>
+  <div style="display:flex;gap:12px">
+    <button id="cancelBtn" onclick="window.close()">Cancel</button>
+    <button id="submitBtn" onclick="submitAll()">Submit All</button>
+  </div>
+</footer>
+
+<script>
+let DATA = null;
+const decisions = { field_changes: {}, new_projects: {}, pipeline_only: {}, ambiguous: {}, rollups: {} };
+
+fetch('/data.json').then(r => r.json()).then(data => {
+  DATA = data;
+  document.getElementById('statChanges').textContent = data.stats.total_changes || 0;
+  document.getElementById('statProjects').textContent = data.stats.projects_affected || 0;
+  document.getElementById('statNew').textContent = (data.new_in_excel || []).length;
+  document.getElementById('statPipelineOnly').textContent = (data.pipeline_only || []).length;
+  document.getElementById('statAmbiguous').textContent = (data.ambiguous || []).length;
+  document.getElementById('statRollups').textContent = (data.rollup_diffs || []).length;
+
+  // Default: accept ALL field changes, keep all pipeline-only, accept all rollups
+  DATA.field_changes.forEach((_, i) => { decisions.field_changes[String(i)] = 'accept'; });
+  DATA.pipeline_only.forEach((_, i) => { decisions.pipeline_only[String(i)] = 'keep'; });
+  (DATA.rollup_diffs || []).forEach((_, i) => { decisions.rollups[String(i)] = 'accept'; });
+
+  render();
+  updateCounters();
+});
+
+function render() {
+  const el = document.getElementById('content');
+  el.innerHTML = '';
+  // Section 1: Field Changes (most important — shown first, grouped by project)
+  if (DATA.field_changes.length) el.appendChild(buildFieldChanges());
+  // Section 2: New Projects
+  if (DATA.new_in_excel.length) el.appendChild(buildNewProjects());
+  // Section 3: Rollups
+  if (DATA.rollup_diffs.length) el.appendChild(buildRollups());
+  // Section 4: Ambiguous
+  if (DATA.ambiguous.length) el.appendChild(buildAmbiguous());
+  // Section 5: Pipeline Only
+  if (DATA.pipeline_only.length) el.appendChild(buildPipelineOnly());
+
+  // Auto-open field changes
+  const first = el.querySelector('.sec-body');
+  if (first) first.classList.add('open');
+}
+
+function makeSection(title, count) {
+  const sec = document.createElement('section');
+  const hdr = document.createElement('div');
+  hdr.className = 'sec-header';
+  hdr.innerHTML = '<h2>' + title + '</h2><span class="sec-count">' + count + '</span>';
+  const body = document.createElement('div');
+  body.className = 'sec-body';
+  hdr.addEventListener('click', () => body.classList.toggle('open'));
+  sec.appendChild(hdr);
+  sec.appendChild(body);
+  return { sec, body };
+}
+
+function buildFieldChanges() {
+  const { sec, body } = makeSection('Field Changes (grouped by project)', DATA.field_changes.length);
+  const toolbar = document.createElement('div');
+  toolbar.className = 'toolbar';
+  toolbar.innerHTML =
+    '<button id="tbAcceptAll" class="active-tb" onclick="selectAllFields(\'accept\')">Accept All</button>' +
+    '<button id="tbRejectAll" onclick="selectAllFields(\'reject\')">Reject All</button>' +
+    '<span style="color:#888;font-size:0.75rem;margin-left:4px">Default: all accepted. Uncheck to reject individual changes.</span>' +
+    '<span class="summary-counter" id="fieldCounter">' + DATA.field_changes.length + '/' + DATA.field_changes.length + ' accepted</span>';
+  body.appendChild(toolbar);
+
+  // Group changes by project
+  const grouped = {};
+  const projectOrder = [];
+  DATA.field_changes.forEach((c, i) => {
+    c._idx = i;
+    if (!grouped[c.uid]) { grouped[c.uid] = { label: c.project_label, items: [] }; projectOrder.push(c.uid); }
+    grouped[c.uid].items.push(c);
+  });
+
+  const tbl = document.createElement('table');
+  tbl.innerHTML = '<tr><th style="width:32px"></th><th>Field</th><th>Old Value</th><th>New Value</th><th style="width:60px">Sev</th></tr>';
+
+  projectOrder.forEach(uid => {
+    const grp = grouped[uid];
+    // Project header row with batch accept/reject
+    const hdr = document.createElement('tr');
+    hdr.className = 'project-group-header';
+    hdr.innerHTML =
+      '<td><input type="checkbox" checked data-group-uid="' + uid + '" onchange="toggleProjectGroup(this)"></td>' +
+      '<td colspan="3">' + esc(grp.label) + ' <span style="color:#888;font-weight:400">(' + grp.items.length + ' changes)</span></td>' +
+      '<td></td>';
+    tbl.appendChild(hdr);
+
+    grp.items.forEach(c => {
+      const tr = document.createElement('tr');
+      tr.className = 'sev-' + c.severity;
+      tr.dataset.uid = uid;
+      tr.innerHTML =
+        '<td><input type="checkbox" checked data-cat="field_changes" data-idx="' + c._idx + '" data-uid="' + uid + '" onchange="toggleField(this)"></td>' +
+        '<td class="mono">' + esc(c.field) + '</td>' +
+        '<td class="val-cell old-val">' + esc(c.old) + '</td>' +
+        '<td class="val-cell new-val">' + esc(c.new) + '</td>' +
+        '<td><span class="sev-badge">' + c.severity + '</span></td>';
+      tbl.appendChild(tr);
+    });
+  });
+  body.appendChild(tbl);
+  return sec;
+}
+
+function buildNewProjects() {
+  const { sec, body } = makeSection('New Projects (in Excel, not in pipeline)', DATA.new_in_excel.length);
+  const toolbar = document.createElement('div');
+  toolbar.className = 'toolbar';
+  toolbar.innerHTML = '<button onclick="selectAllNew(\'accept\')">Accept All</button><button onclick="selectAllNew(\'ignore\')">Ignore All</button><span class="summary-counter" id="newCounter">0/' + DATA.new_in_excel.length + ' decided</span>';
+  body.appendChild(toolbar);
+
+  const tbl = document.createElement('table');
+  tbl.innerHTML = '<tr><th>Project Name</th><th>Phase</th><th>Municipality</th><th>State</th><th>Budget</th><th>Action</th></tr>';
+  DATA.new_in_excel.forEach((entry, i) => {
+    const r = entry.excel_row;
+    const tr = document.createElement('tr');
+    tr.innerHTML = '<td>' + esc(r.raw_name) + '</td><td class="mono">' + esc(r.project_phase) + '</td><td>' + esc(r.municipality) + '</td>' +
+      '<td>' + esc(r.project_state) + '</td><td class="mono">' + esc(r.project_budget) + '</td>' +
+      '<td class="btn-group"><button class="btn" data-cat="new_projects" data-idx="' + i + '" data-val="accept" onclick="setDecision(this)">Accept</button>' +
+      '<button class="btn" data-cat="new_projects" data-idx="' + i + '" data-val="ignore" onclick="setDecision(this)">Ignore</button></td>';
+    tbl.appendChild(tr);
+  });
+  body.appendChild(tbl);
+  return sec;
+}
+
+function buildPipelineOnly() {
+  const { sec, body } = makeSection('Pipeline-Only Projects (no Excel match)', DATA.pipeline_only.length);
+  const toolbar = document.createElement('div');
+  toolbar.className = 'toolbar';
+  toolbar.innerHTML =
+    '<button id="tbKeepAll" class="active-tb" onclick="selectAllPipeline(\'keep\')">Keep All</button>' +
+    '<button onclick="selectAllPipeline(\'archive\')">Archive All</button>' +
+    '<span style="color:#888;font-size:0.75rem;margin-left:4px">Default: all kept.</span>' +
+    '<span class="summary-counter" id="pipelineCounter">0 archived</span>';
+  body.appendChild(toolbar);
+
+  const tbl = document.createElement('table');
+  tbl.innerHTML = '<tr><th>Client</th><th>Project</th><th>Phase</th><th>Cross-check</th><th>Action</th></tr>';
+  DATA.pipeline_only.forEach((entry, i) => {
+    const tr = document.createElement('tr');
+    const related = entry.related_matched || [];
+    const xref = related.length
+      ? '<span style="color:#c60;font-size:0.75rem" title="' + esc(related.join(', ')) + '">&#9888; Client also in: ' + esc(related.slice(0,2).join(', ')) + '</span>'
+      : '<span style="color:#999;font-size:0.75rem">No Excel match</span>';
+    tr.innerHTML = '<td>' + esc(entry.client) + '</td><td>' + esc(entry.project_name) + '</td><td class="mono">' + esc(entry.phase) + '</td>' +
+      '<td>' + xref + '</td>' +
+      '<td class="btn-group">' +
+      '<button class="btn active-keep" data-cat="pipeline_only" data-idx="' + i + '" data-val="keep" onclick="setDecision(this)">Keep</button>' +
+      '<button class="btn" data-cat="pipeline_only" data-idx="' + i + '" data-val="archive" onclick="setDecision(this)">Archive</button></td>';
+    tbl.appendChild(tr);
+  });
+  body.appendChild(tbl);
+  return sec;
+}
+
+function buildAmbiguous() {
+  const { sec, body } = makeSection('Ambiguous Matches', DATA.ambiguous.length);
+  const tbl = document.createElement('table');
+  tbl.innerHTML = '<tr><th>Excel Name</th><th>Best Match (pipeline fingerprint)</th><th>Score</th><th>Action</th></tr>';
+  DATA.ambiguous.forEach((entry, i) => {
+    const r = entry.excel_row;
+    const scoreClass = entry.score >= 0.8 ? 'score-high' : entry.score >= 0.7 ? 'score-mid' : 'score-low';
+    const tr = document.createElement('tr');
+    tr.innerHTML = '<td>' + esc(r.raw_name) + '</td><td class="mono">' + esc(entry.yaml_label) + '</td>' +
+      '<td><span class="score ' + scoreClass + '">' + (entry.score * 100).toFixed(0) + '%</span></td>' +
+      '<td class="btn-group"><button class="btn" data-cat="ambiguous" data-idx="' + i + '" data-val="confirm" onclick="setDecision(this)">Confirm</button>' +
+      '<button class="btn" data-cat="ambiguous" data-idx="' + i + '" data-val="new" onclick="setDecision(this)">Create New</button>' +
+      '<button class="btn" data-cat="ambiguous" data-idx="' + i + '" data-val="skip" onclick="setDecision(this)">Skip</button></td>';
+    tbl.appendChild(tr);
+  });
+  body.appendChild(tbl);
+  return sec;
+}
+
+function buildRollups() {
+  const { sec, body } = makeSection('Rollup Review', DATA.rollup_diffs.length);
+  const toolbar = document.createElement('div');
+  toolbar.className = 'toolbar';
+  toolbar.innerHTML = '<button class="active-tb" onclick="selectAllRollups(\'accept\')">Accept All</button><button onclick="selectAllRollups(\'reject\')">Reject All</button><span style="color:#888;font-size:0.75rem;margin-left:4px">Default: all accepted.</span>';
+  body.appendChild(toolbar);
+
+  const tbl = document.createElement('table');
+  tbl.innerHTML = '<tr><th>Group</th><th>Excel Rows</th><th>Merged Phase</th><th>Merged Budget</th><th>Changes</th><th>Action</th></tr>';
+  DATA.rollup_diffs.forEach((group, i) => {
+    const changesHtml = group.changes.map(c => '<div><span class="mono">' + esc(c.field) + '</span>: <span class="old-val">' + esc(c.old) + '</span> &rarr; <span class="new-val">' + esc(c.new) + '</span></div>').join('');
+    const tr = document.createElement('tr');
+    tr.innerHTML = '<td><strong>' + esc(group.label) + '</strong></td><td>' + group.excel_row_count + '</td>' +
+      '<td class="mono">' + esc(group.merged.phase) + '</td><td class="mono">' + esc(group.merged.total_budget) + '</td>' +
+      '<td>' + (changesHtml || '<em>No changes</em>') + '</td>' +
+      '<td class="btn-group"><button class="btn active-accept" data-cat="rollups" data-idx="' + i + '" data-val="accept" onclick="setDecision(this)">Accept</button>' +
+      '<button class="btn" data-cat="rollups" data-idx="' + i + '" data-val="reject" onclick="setDecision(this)">Reject</button></td>';
+    tbl.appendChild(tr);
+  });
+  body.appendChild(tbl);
+  return sec;
+}
+
+// --- Decision logic ---
+
+function setDecision(btn) {
+  const cat = btn.dataset.cat;
+  const idx = btn.dataset.idx;
+  const val = btn.dataset.val;
+  decisions[cat][idx] = val;
+  const siblings = btn.parentElement.querySelectorAll('.btn');
+  siblings.forEach(b => { b.className = 'btn'; });
+  btn.classList.add('active-' + val);
+  updateCounters();
+}
+
+function toggleField(cb) {
+  const idx = cb.dataset.idx;
+  decisions.field_changes[idx] = cb.checked ? 'accept' : 'reject';
+  // Update project group checkbox
+  const uid = cb.dataset.uid;
+  updateProjectGroupCheckbox(uid);
+  updateCounters();
+}
+
+function toggleProjectGroup(groupCb) {
+  const uid = groupCb.dataset.groupUid;
+  const checked = groupCb.checked;
+  document.querySelectorAll('input[data-cat="field_changes"][data-uid="' + uid + '"]').forEach(cb => {
+    cb.checked = checked;
+    decisions.field_changes[cb.dataset.idx] = checked ? 'accept' : 'reject';
+  });
+  updateCounters();
+}
+
+function updateProjectGroupCheckbox(uid) {
+  const cbs = document.querySelectorAll('input[data-cat="field_changes"][data-uid="' + uid + '"]');
+  const groupCb = document.querySelector('input[data-group-uid="' + uid + '"]');
+  if (!groupCb) return;
+  const allChecked = Array.from(cbs).every(cb => cb.checked);
+  const someChecked = Array.from(cbs).some(cb => cb.checked);
+  groupCb.checked = allChecked;
+  groupCb.indeterminate = someChecked && !allChecked;
+}
+
+function selectAllFields(val) {
+  const accept = val === 'accept';
+  DATA.field_changes.forEach((_, i) => { decisions.field_changes[String(i)] = val; });
+  document.querySelectorAll('[data-cat="field_changes"]').forEach(cb => {
+    if (cb.type === 'checkbox') cb.checked = accept;
+  });
+  document.querySelectorAll('[data-group-uid]').forEach(cb => {
+    cb.checked = accept;
+    cb.indeterminate = false;
+  });
+  document.getElementById('tbAcceptAll').className = accept ? 'active-tb' : '';
+  document.getElementById('tbRejectAll').className = accept ? '' : 'active-tb';
+  updateCounters();
+}
+
+function selectAllNew(val) {
+  DATA.new_in_excel.forEach((_, i) => { decisions.new_projects[String(i)] = val; });
+  document.querySelectorAll('[data-cat="new_projects"]').forEach(btn => {
+    btn.className = 'btn';
+    if (btn.dataset.val === val) btn.classList.add('active-' + val);
+  });
+  updateCounters();
+}
+
+function selectAllPipeline(val) {
+  DATA.pipeline_only.forEach((_, i) => { decisions.pipeline_only[String(i)] = val; });
+  document.querySelectorAll('[data-cat="pipeline_only"]').forEach(btn => {
+    btn.className = 'btn';
+    if (btn.dataset.val === val) btn.classList.add('active-' + val);
+  });
+  updateCounters();
+}
+
+function selectAllRollups(val) {
+  (DATA.rollup_diffs || []).forEach((_, i) => { decisions.rollups[String(i)] = val; });
+  document.querySelectorAll('[data-cat="rollups"]').forEach(btn => {
+    btn.className = 'btn';
+    if (btn.dataset.val === val) btn.classList.add('active-' + val);
+  });
+  updateCounters();
+}
+
+function updateCounters() {
+  let accepted = 0;
+  let rejected = 0;
+  for (const cat in decisions) {
+    for (const idx in decisions[cat]) {
+      const v = decisions[cat][idx];
+      if (v === 'accept' || v === 'confirm') accepted++;
+      else if (v === 'reject' || v === 'archive' || v === 'ignore') rejected++;
+    }
+  }
+  document.getElementById('acceptedCount').textContent = accepted;
+  document.getElementById('rejectedCount').textContent = rejected;
+
+  const fc = Object.values(decisions.field_changes).filter(v => v === 'accept').length;
+  const fcEl = document.getElementById('fieldCounter');
+  if (fcEl) fcEl.textContent = fc + '/' + DATA.field_changes.length + ' accepted';
+
+  const nc = Object.values(decisions.new_projects).filter(v => v === 'accept').length;
+  const ncEl = document.getElementById('newCounter');
+  if (ncEl) ncEl.textContent = nc + '/' + DATA.new_in_excel.length + ' decided';
+
+  const pa = Object.values(decisions.pipeline_only).filter(v => v === 'archive').length;
+  const paEl = document.getElementById('pipelineCounter');
+  if (paEl) paEl.textContent = pa + ' archived';
+}
+
+function submitAll() {
+  document.getElementById('submitBtn').disabled = true;
+  document.getElementById('submitBtn').textContent = 'Submitting...';
+  fetch('/submit', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(decisions),
+  }).then(r => r.json()).then(() => {
+    document.body.innerHTML = '<div style="text-align:center;padding:80px;font-size:1.4rem;color:#28a745">Decisions submitted successfully.<br><span style="font-size:0.9rem;color:#666">You can close this tab. The pipeline will continue processing.</span></div>';
+  }).catch(err => {
+    document.getElementById('submitBtn').disabled = false;
+    document.getElementById('submitBtn').textContent = 'Submit All';
+    alert('Error submitting: ' + err.message);
+  });
+}
+
+function esc(s) { if (!s) return ''; const d = document.createElement('div'); d.textContent = String(s); return d.innerHTML; }
+</script>
+</body>
+</html>

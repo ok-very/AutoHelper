@@ -1,0 +1,89 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>AutoHelper — Global Settings</title>
+  <link rel="stylesheet" href="/dashboard/static/style.css">
+</head>
+<body>
+  <div class="dashboard">
+    <h1>Global Settings</h1>
+    <p class="subtitle">AutoHelper service configuration</p>
+
+    <!-- Service Status -->
+    <section>
+      <h2>Service Status</h2>
+      <div class="section-body" id="status-rows">
+        <div class="status-row">
+          <span class="label">Loading...</span>
+          <span class="value"></span>
+        </div>
+      </div>
+    </section>
+
+    <!-- Settings sections rendered dynamically from /config/schema -->
+    <div id="settings-sections"></div>
+
+    <!-- Contact Sync Status -->
+    <section>
+      <h2>Contact Sync Status</h2>
+      <div class="section-body">
+        <div id="contact-status-rows">
+          <div class="status-row">
+            <span class="label">Loading...</span>
+            <span class="value"></span>
+          </div>
+        </div>
+        <div class="button-row">
+          <button id="btn-manual-sync">Sync Now</button>
+        </div>
+      </div>
+
+      <h2>Sync History</h2>
+      <div class="section-body">
+        <table class="log-table">
+          <thead>
+            <tr>
+              <th>Time</th>
+              <th>Status</th>
+              <th>Created</th>
+              <th>Updated</th>
+              <th>Deleted</th>
+            </tr>
+          </thead>
+          <tbody id="contact-history-body">
+            <tr><td colspan="5" class="empty">Loading...</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+
+    <!-- Console -->
+    <section>
+      <h2>Console</h2>
+      <div class="section-body console-body">
+        <div id="console-log" class="console-log"></div>
+      </div>
+    </section>
+
+    <!-- Pairing -->
+    <section>
+      <h2>Pairing</h2>
+      <div class="section-body">
+        <div class="status-row">
+          <span class="label"><span class="status-dot warn" id="pairing-dot"></span>Status</span>
+          <span class="value" id="pairing-status">Loading...</span>
+        </div>
+        <div class="button-row">
+          <button id="btn-pair" style="display:none">Pair with AutoArt</button>
+          <button id="btn-unpair" class="danger" style="display:none">Unpair</button>
+        </div>
+      </div>
+    </section>
+  </div>
+
+  <div id="toast" class="toast"></div>
+  <script src="/dashboard/static/app.js"></script>
+</body>
+</html>

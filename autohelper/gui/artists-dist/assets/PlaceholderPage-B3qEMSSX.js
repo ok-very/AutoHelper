@@ -1,0 +1,1 @@
+import{j as e}from"./settings-Wa-j8E77.js";function r({title:a,description:l,detail:s}){return e.jsxs("div",{className:"placeholder-page",children:[e.jsx("h1",{children:a}),e.jsx("p",{className:"placeholder-desc",children:l}),s&&e.jsx("p",{className:"placeholder-detail",children:s}),e.jsx("span",{className:"placeholder-badge",children:"Coming Soon"})]})}export{r as P};

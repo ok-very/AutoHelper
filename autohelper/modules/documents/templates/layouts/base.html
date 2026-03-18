@@ -1,0 +1,98 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{% block title %}Report{% endblock %}</title>
+    <style>
+        :root {
+            --font-stack: Carlito, Calibri, "Segoe UI", sans-serif;
+            --color-bg: #ffffff;
+            --color-fg: #1a1a2e;
+            --color-muted: #6b7280;
+            --color-border: #e5e7eb;
+            --color-accent: #2563eb;
+            --color-success: #16a34a;
+            --color-row-alt: #f9fafb;
+        }
+
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+
+        body {
+            font-family: var(--font-stack);
+            font-size: 11px;
+            line-height: 1.4;
+            color: var(--color-fg);
+            background: var(--color-bg);
+            padding: 20px;
+        }
+
+        h1 { font-size: 18px; font-weight: 600; margin-bottom: 4px; }
+        .subtitle { font-size: 12px; color: var(--color-muted); margin-bottom: 16px; }
+
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            font-size: 11px;
+        }
+
+        th {
+            text-align: left;
+            padding: 6px 8px;
+            border-bottom: 2px solid var(--color-border);
+            font-weight: 600;
+            font-size: 10px;
+            text-transform: uppercase;
+            letter-spacing: 0.03em;
+            color: var(--color-muted);
+            white-space: nowrap;
+        }
+
+        td {
+            padding: 5px 8px;
+            border-bottom: 1px solid var(--color-border);
+            vertical-align: middle;
+        }
+
+        tr:nth-child(even) { background: var(--color-row-alt); }
+
+        .thumb {
+            width: 60px;
+            height: 60px;
+            object-fit: cover;
+            border-radius: 3px;
+            background: #f3f4f6;
+        }
+
+        .badge {
+            display: inline-block;
+            padding: 1px 6px;
+            border-radius: 3px;
+            font-size: 10px;
+            font-weight: 500;
+        }
+
+        .badge-green { background: #dcfce7; color: #166534; }
+        .badge-blue { background: #dbeafe; color: #1e40af; }
+        .badge-gray { background: #f3f4f6; color: #374151; }
+
+        .rats { font-size: 13px; letter-spacing: 1px; }
+        .confirmed { color: var(--color-success); font-weight: 600; }
+        .dim { color: var(--color-muted); }
+        .nowrap { white-space: nowrap; }
+
+        @media print {
+            body { padding: 0; font-size: 9px; }
+            th { font-size: 8px; }
+            td { padding: 3px 5px; }
+            .thumb { width: 45px; height: 45px; }
+            .no-print { display: none; }
+        }
+
+        {% block extra_styles %}{% endblock %}
+    </style>
+</head>
+<body>
+    {% block content %}{% endblock %}
+</body>
+</html>

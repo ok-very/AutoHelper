@@ -1,0 +1,88 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Lists Health — AutoHelper</title>
+  <link rel="stylesheet" href="/artists-dashboard/static/shared.css">
+</head>
+<body>
+  <div id="app">
+    <nav class="artist-nav">
+      <a href="/artists-settings" class="nav-link">Settings</a>
+      <a href="/artists-health" class="nav-link active">Health</a>
+      <a href="/artists-recon" class="nav-link">Reconciliation</a>
+      <a href="/artists-dashboard" class="nav-link">Directory</a>
+    </nav>
+
+    <header class="header">
+      <h1>Lists Health</h1>
+      <div class="header-actions">
+        <button id="btn-reload" class="btn btn-ghost">&#x27F3; Reload</button>
+      </div>
+    </header>
+
+    <!-- Overview cards -->
+    <div class="stats-section" id="stats-section" style="display:none">
+      <div class="stat-cards">
+        <div class="stat-card"><div class="stat-value" id="stat-total">0</div><div class="stat-label">Total Artists</div></div>
+        <div class="stat-card"><div class="stat-value" id="stat-avg">0%</div><div class="stat-label">Avg Completeness</div></div>
+        <div class="stat-card"><div class="stat-value" id="stat-gaps">0</div><div class="stat-label">With Gaps</div></div>
+        <div class="stat-card"><div class="stat-value" id="stat-review">0</div><div class="stat-label">Needs Review</div></div>
+      </div>
+      <div id="completeness-chart" class="completeness-chart"></div>
+    </div>
+
+    <!-- Health grid -->
+    <div class="health-grid">
+
+      <!-- Completeness ranking -->
+      <div class="health-card full-width">
+        <h3>Completeness Ranking <span style="font-weight:400;font-size:11px;color:var(--fg-secondary)">(worst first)</span></h3>
+        <div style="max-height:400px;overflow-y:auto">
+          <table class="ranking-table" id="ranking-table">
+            <thead>
+              <tr>
+                <th>#</th>
+                <th>Artist</th>
+                <th>Categories</th>
+                <th>Score</th>
+                <th>Gaps</th>
+              </tr>
+            </thead>
+            <tbody id="ranking-tbody"></tbody>
+          </table>
+        </div>
+      </div>
+
+      <!-- Gap analysis -->
+      <div class="health-card full-width">
+        <h3>Gap Analysis</h3>
+        <div id="gap-analysis" class="gap-grid"></div>
+      </div>
+
+      <!-- Broken / Unindexed -->
+      <div class="health-card">
+        <h3>Broken / Unindexed</h3>
+        <div id="broken-list"><p class="empty">Loading...</p></div>
+      </div>
+
+      <!-- Enrichment opportunities -->
+      <div class="health-card">
+        <h3>Enrichment Opportunities</h3>
+        <div id="enrichment-list"><p class="empty">Loading...</p></div>
+      </div>
+
+      <!-- Review queue -->
+      <div class="health-card full-width">
+        <h3>Review Queue</h3>
+        <div id="review-queue"><p class="empty">Loading...</p></div>
+      </div>
+
+    </div>
+  </div>
+
+  <script src="/artists-dashboard/static/nav.js"></script>
+  <script src="/artists-dashboard/static/health.js"></script>
+</body>
+</html>

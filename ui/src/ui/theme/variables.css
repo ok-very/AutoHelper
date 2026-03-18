@@ -1,0 +1,124 @@
+/**
+ * Workspace Theme CSS Variables — Parchment palette
+ * Aligned with shared.css / DESIGN.md Foundation Neutrals
+ */
+
+:root {
+  --ws-bg: #F5F2ED;
+  --ws-fg: #2E2E2C;
+  --ws-muted-fg: #8C8C88;
+  --ws-accent: #3F5C6E;
+  --ws-accent-fg: #ffffff;
+
+  --ws-text-primary: var(--ws-fg);
+  --ws-text-secondary: #5A5A57;
+  --ws-text-disabled: #8C8C88;
+
+  --ws-color-success: #6F7F5C;
+  --ws-color-warning: #B89B5E;
+  --ws-color-error: #8C4A4A;
+  --ws-color-info: #3F5C6E;
+
+  --ws-accent-secondary: #8A5A3C;
+
+  --ws-font-size-h1: 20px;
+  --ws-font-size-h2: 16px;
+  --ws-font-size-body: 14px;
+  --ws-font-size-meta: 12px;
+  --ws-font-size-micro: 11px;
+
+  --ws-mono-fg: #3A3A38;
+  --ws-mono-bg: rgba(63, 92, 110, 0.035);
+
+  --ws-row-expanded-bg: rgba(63, 92, 110, 0.04);
+
+  --ws-group-bg: #ffffff;
+  --ws-group-border: #D6D2CB;
+  --ws-group-radius: 0px;
+  --ws-group-shadow: none;
+  --ws-group-padding: 0px;
+
+  --ws-tabstrip-bg: #EDEAE4;
+  --ws-tabstrip-border: #D6D2CB;
+  --ws-tabstrip-height: 36px;
+
+  --ws-tab-height: 32px;
+  --ws-tab-fg: #8C8C88;
+  --ws-tab-fg-hover: #5A5A57;
+  --ws-tab-fg-active: #2E2E2C;
+  --ws-tab-bg: transparent;
+  --ws-tab-bg-hover: #D6D2CB;
+  --ws-tab-bg-active: #ffffff;
+
+  --ws-panel-bg: #ffffff;
+  --ws-panel-fg: #2E2E2C;
+  --ws-panel-padding: 0px;
+  --ws-panel-border: #D6D2CB;
+
+  --ws-scrollbar-width: 8px;
+  --ws-scrollbar-track: #EDEAE4;
+  --ws-scrollbar-thumb: #D6D2CB;
+  --ws-scrollbar-thumb-hover: #8C8C88;
+
+  --ws-sash-size: 4px;
+  --ws-sash-bg: transparent;
+  --ws-sash-bg-hover: var(--ws-accent);
+  --ws-sash-bg-active: var(--ws-accent);
+
+  --ws-motion-duration-fast: 100ms;
+  --ws-motion-duration: 150ms;
+  --ws-motion-duration-slow: 300ms;
+  --ws-motion-ease: cubic-bezier(0.4, 0, 0.2, 1);
+
+  --ws-focus-ring-width: 2px;
+  --ws-focus-ring-color: var(--ws-accent);
+
+  /* Badge variants — warm-toned to match Parchment */
+  --ws-badge-default-bg: #EDEAE4;
+  --ws-badge-default-fg: #5A5A57;
+  --ws-badge-default-border: #D6D2CB;
+
+  --ws-badge-success-bg: #e8f0e0;
+  --ws-badge-success-fg: #4a5a3a;
+  --ws-badge-success-border: #c8d8b8;
+
+  --ws-badge-error-bg: #f5e0e0;
+  --ws-badge-error-fg: #8C4A4A;
+  --ws-badge-error-border: #e8c0c0;
+
+  --ws-badge-warning-bg: #f5f0e0;
+  --ws-badge-warning-fg: #8a7040;
+  --ws-badge-warning-border: #e8d8b0;
+
+  --ws-badge-info-bg: #e0eaf0;
+  --ws-badge-info-fg: #3F5C6E;
+  --ws-badge-info-border: #c0d0e0;
+
+  --ws-badge-neutral-bg: #EDEAE4;
+  --ws-badge-neutral-fg: #5A5A57;
+  --ws-badge-neutral-border: #D6D2CB;
+
+  --ws-badge-light-bg: #F5F2ED;
+  --ws-badge-light-fg: #5A5A57;
+  --ws-badge-light-border: #D6D2CB;
+
+  --ws-badge-project-bg: #e0eaf0;
+  --ws-badge-project-fg: #2a4a5e;
+  --ws-badge-project-border: #c0d0e0;
+
+  --ws-badge-process-bg: #f0e8f5;
+  --ws-badge-process-fg: #6b21a8;
+  --ws-badge-process-border: #e0d0f0;
+
+  --ws-badge-phase-bg: #EDEAE4;
+  --ws-badge-phase-fg: #5A5A57;
+  --ws-badge-phase-border: #D6D2CB;
+
+  --ws-badge-subprocess-bg: #f5ede0;
+  --ws-badge-subprocess-fg: #8A5A3C;
+  --ws-badge-subprocess-border: #e8d0b0;
+
+  --ws-badge-task-bg: #e8f0e0;
+  --ws-badge-task-fg: #4a5a3a;
+  --ws-badge-task-border: #c8d8b8;
+}

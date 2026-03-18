@@ -1,0 +1,48 @@
+{
+  "city_id": "burnaby",
+  "city_name": "City of Burnaby",
+  "policy_version": "2023-10",
+  "policy_source": "City-of-Burnaby-Public-Art-Policy.pdf",
+  "budget_rules": {
+    "contribution_rate": 0.01,
+    "cost_basis": "hard_construction_market",
+    "excludes": ["land", "offsite_servicing", "permit_fees", "consultant_costs"],
+    "maintenance_reserve_rate": 0.10,
+    "maintenance_reserve_mandatory": true
+  },
+  "thresholds": {
+    "residential_units_min": 50,
+    "commercial_area_sqm_min": 1000,
+    "requires_rezoning": true,
+    "applicable_zones": ["town_centre", "urban_village"],
+    "neighbourhoods": ["Brentwood", "Lougheed", "Metrotown", "Edmonds"]
+  },
+  "constraints": {
+    "artist_cannot_be_project_team": true,
+    "barred_roles": ["architect", "landscape_architect", "engineer"]
+  },
+  "condition_defaults": {
+    "city_inspection_required": true,
+    "civic_contribution": false,
+    "community_engagement": true,
+    "ownership_transfer_required": true,
+    "copyright_agreement_required": true,
+    "insurance_documentation_required": true,
+    "reserve_account_required": true
+  },
+  "task_overrides": [
+    { "action": "modify", "temp_id": "dry-11-12", "changes": { "name": "City Inspection (Burnaby)", "condition": null } },
+    { "action": "modify", "temp_id": "dry-3-9", "changes": { "name": "10% Maintenance Reserve Confirmation", "condition": null } },
+    { "action": "add", "task": { "temp_id": "bby-1-10", "name": "Verify Eligibility (Rezoning + Thresholds)", "stage": 1, "depends_on": ["dry-1-0"], "condition": null } },
+    { "action": "add", "task": { "temp_id": "bby-1-11", "name": "Calculate 1% Hard Cost Contribution (Market Only)", "stage": 1, "depends_on": ["bby-1-10"], "condition": null } },
+    { "action": "add", "task": { "temp_id": "bby-5-20", "name": "Verify Artist Eligibility (Not Project Team)", "stage": 5, "depends_on": ["dry-5-4"], "condition": null } },
+    { "action": "add", "task": { "temp_id": "bby-8-10", "name": "Materials Durability Review", "stage": 8, "depends_on": ["dry-8-2"], "condition": null } },
+    { "action": "add", "task": { "temp_id": "bby-8-11", "name": "Submit Insurance Documentation", "stage": 8, "depends_on": ["dry-8-1"], "condition": null } },
+    { "action": "add", "task": { "temp_id": "bby-11-20", "name": "Execute Copyright Agreement", "stage": 11, "depends_on": ["dry-11-4"], "condition": null } },
+    { "action": "add", "task": { "temp_id": "bby-11-21", "name": "Execute Ownership Transfer Agreement", "stage": 11, "depends_on": ["dry-11-4"], "condition": null } },
+    { "action": "add", "task": { "temp_id": "bby-11-22", "name": "Coordinate Reserve Account / Trust Fund", "stage": 11, "depends_on": ["dry-11-11"], "condition": "reserve_account_required" } },
+    { "action": "add", "task": { "temp_id": "bby-11-23", "name": "Baseline Conservation Assessment", "stage": 11, "depends_on": ["dry-10-3"], "condition": null } },
+    { "action": "add", "task": { "temp_id": "bby-4-10", "name": "Confirm Indigenous Relations Manager Consultation", "stage": 4, "depends_on": ["dry-4-1"], "condition": "indigenous_engagement" } }
+  ],
+  "task_removals": []
+}

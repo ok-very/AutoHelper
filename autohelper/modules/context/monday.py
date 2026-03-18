@@ -5,10 +5,11 @@ Adapted from automail/scripts/monday_client.py for integration with AutoHelper.
 Provides consistent API access with settings-based configuration.
 """
 
-import requests
-from typing import TypeVar, Any
-from dataclasses import dataclass
 import logging
+from dataclasses import dataclass
+from typing import Any, TypeVar, cast
+
+import requests
 
 logger = logging.getLogger(__name__)
 
@@ -16,6 +17,7 @@ logger = logging.getLogger(__name__)
 @dataclass
 class MondayClientConfig:
     """Configuration for Monday.com client"""
+
     token: str
     api_version: str = "2024-10"
     api_url: str = "https://api.monday.com/v2"
@@ -23,18 +25,16 @@ class MondayClientConfig:
 
 class MondayClientError(Exception):
     """Error from Monday.com API"""
+
     def __init__(
-        self,
-        message: str,
-        errors: list[dict] | None = None,
-        status_code: int | None = None
+        self, message: str, errors: list[dict[str, Any]] | None = None, status_code: int | None = None
     ):
         super().__init__(message)
         self.errors = errors
         self.status_code = status_code
 
 
-T = TypeVar('T')
+T = TypeVar("T")
 
 
 class MondayClient:
@@ -51,11 +51,7 @@ class MondayClient:
         ''')
     """
 
-    def __init__(
-        self,
-        token: str,
-        api_version: str = "2024-10"
-    ):
+    def __init__(self, token: str, api_version: str = "2024-10"):
         if not token:
             raise ValueError(
                 "Monday API token required. "
@@ -67,11 +63,7 @@ class MondayClient:
         self.api_version = api_version
         self._cached_me: dict[str, Any] | None = None
 
-    def query(
-        self,
-        query: str,
-        variables: dict[str, Any] | None = None
-    ) -> dict[str, Any]:
+    def query(self, query: str, variables: dict[str, Any] | None = None) -> dict[str, Any]:
         """
         Execute a GraphQL query against the Monday.com API.
 
@@ -88,7 +80,7 @@ class MondayClient:
         headers = {
             "Authorization": self.token,
             "Content-Type": "application/json",
-            "API-Version": self.api_version
+            "API-Version": self.api_version,
         }
 
         payload: dict[str, Any] = {"query": query}
@@ -96,40 +88,41 @@ class MondayClient:
             payload["variables"] = variables
 
         try:
-            response = requests.post(
-                self.api_url,
-                json=payload,
-                headers=headers,
-                timeout=30
-            )
+            response = requests.post(self.api_url, json=payload, headers=headers, timeout=30)
         except requests.RequestException as e:
             logger.error(f"Monday API request failed: {e}")
             raise MondayClientError(f"Request failed: {e}") from e
 
-        if response.status_code != 200:
+        if not response.ok:
+            # Truncate response body to prevent leaking sensitive details in exceptions
+            body_preview = response.text[:200] + "..." if len(response.text) > 200 else response.text
             raise MondayClientError(
-                f"HTTP {response.status_code}: {response.text}",
-                status_code=response.status_code
+                f"HTTP {response.status_code}: {body_preview}", status_code=response.status_code
             )
 
-        result = response.json()
+        try:
+            result = response.json()
+        except ValueError as e:
+            # JSON decode error - response wasn't valid JSON (e.g., HTML error page)
+            body_preview = response.text[:200] + "..." if len(response.text) > 200 else response.text
+            raise MondayClientError(
+                f"Invalid JSON response: {body_preview}", status_code=response.status_code
+            ) from e
 
         if "errors" in result:
             errors = result["errors"]
             messages = [e.get("message", "Unknown error") for e in errors]
             raise MondayClientError(
-                "; ".join(messages),
-                errors=errors,
-                status_code=response.status_code
+                "; ".join(messages), errors=errors, status_code=response.status_code
             )
 
-        return result.get("data", {})
+        return cast(dict[str, Any], result.get("data", {}))
 
     def get_me(self) -> dict[str, Any]:
         """Get current user info - useful for testing connection"""
         if self._cached_me:
             return self._cached_me
-        
+
         result = self.query("""
             query {
                 me {
@@ -165,17 +158,19 @@ class MondayClient:
         """
         result = self.query(query, {"limit": limit})
         boards = result.get("boards", [])
-        
+
         parsed = []
         for board in boards:
             developer, project, item_type = self._parse_board_name(board["name"])
-            parsed.append({
-                "id": board["id"],
-                "name": board["name"],
-                "developer": developer,
-                "project": project,
-                "item_type": item_type,
-            })
+            parsed.append(
+                {
+                    "id": board["id"],
+                    "name": board["name"],
+                    "developer": developer,
+                    "project": project,
+                    "item_type": item_type,
+                }
+            )
         return parsed
 
     def fetch_groups_for_board(self, board_id: str) -> list[dict[str, Any]]:
@@ -195,7 +190,7 @@ class MondayClient:
         boards = result.get("boards", [])
         if not boards:
             return []
-        return boards[0].get("groups", [])
+        return cast(list[dict[str, Any]], boards[0].get("groups", []))
 
     @staticmethod
     def _parse_board_name(name: str) -> tuple[str, str, str]:

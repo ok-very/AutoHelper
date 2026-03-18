@@ -1,0 +1,31 @@
+<!-- PROJECT_START: {{ p.slug }} -->
+<!-- ANCHOR_VERSION: 2 -->
+<!-- FIELD: Uid|{{ p.uid }} -->
+<!-- FIELD: Slug|{{ p.slug }} -->
+<!-- FIELD: Fingerprint|{{ p.fingerprint }} -->
+<!-- FIELD: Client|{{ p.fields.get('client', 'TBC') }} -->
+<!-- FIELD: ProjectName|{{ p.fields.get('project_name', 'TBC') }} -->
+<!-- FIELD: City|{{ p.fields.get('city', 'TBC') }} -->
+<!-- FIELD: BfaPhase|{{ p.bfa_phase_canonical }} -->
+<section class="bfa-project" data-project-uid="{{ p.uid }}" data-project-slug="{{ p.slug }}" id="p-{{ p.slug }}">
+
+<div class="bfa-header">
+{{ p.header.inline_html|default(p.header.html) }}
+</div>
+
+{% for sec_name, sec_data in p.sections.items() %}
+{% if sec_data.inline_html and sec_data.inline_html.strip() %}
+<!-- SECTION: {{ sec_name }} -->
+<div class="bfa-section" data-section="{{ sec_name }}">
+{{ sec_data.inline_html }}
+</div>
+{% elif sec_data.html and sec_data.html.strip() %}
+<!-- SECTION: {{ sec_name }} -->
+<div class="bfa-section" data-section="{{ sec_name }}">
+{{ sec_data.html }}
+</div>
+{% endif %}
+{% endfor %}
+
+</section>
+<!-- PROJECT_END: {{ p.slug }} -->

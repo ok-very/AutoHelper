@@ -1,0 +1,354 @@
+/* AutoHelper Dashboard — follows AutoArt design palette (DESIGN.md) */
+
+:root {
+  /* Foundation Neutrals */
+  --bg: #F5F2ED;
+  --bg-surface: #EDEAE4;
+  --border: #D6D2CB;
+  --fg: #2E2E2C;
+  --fg-secondary: #5A5A57;
+  --fg-disabled: #8C8C88;
+
+  /* Structural Accents */
+  --accent: #3F5C6E;
+  --accent-fg: #FFFFFF;
+  --accent-secondary: #8A5A3C;
+
+  /* System Feedback */
+  --color-success: #6F7F5C;
+  --color-warning: #B89B5E;
+  --color-error: #8C4A4A;
+
+  /* Mono */
+  --mono-fg: #3A3A38;
+  --mono-bg: rgba(63, 92, 110, 0.035);
+
+  /* Typography */
+  --font-serif: "Source Serif 4", "Georgia", serif;
+  --font-sans: "Source Sans 3", "Segoe UI", sans-serif;
+  --font-mono: "IBM Plex Mono", monospace;
+}
+
+* { box-sizing: border-box; margin: 0; padding: 0; }
+
+body {
+  font-family: var(--font-serif);
+  font-size: 14px;
+  line-height: 1.5;
+  color: var(--fg);
+  background: var(--bg);
+  -webkit-font-smoothing: antialiased;
+}
+
+.dashboard {
+  max-width: 680px;
+  margin: 0 auto;
+  padding: 32px 24px;
+}
+
+h1 {
+  font-size: 20px;
+  font-weight: 600;
+  margin-bottom: 4px;
+}
+
+.subtitle {
+  font-size: 12px;
+  color: var(--fg-secondary);
+  margin-bottom: 24px;
+}
+
+/* Sections */
+section {
+  margin-bottom: 24px;
+  border: 1px solid var(--border);
+  background: var(--bg);
+}
+
+section h2 {
+  font-size: 16px;
+  font-weight: 600;
+  padding: 12px 16px;
+  border-bottom: 1px solid var(--border);
+  background: var(--bg-surface);
+}
+
+.section-body {
+  padding: 16px;
+}
+
+/* Form rows */
+.field {
+  margin-bottom: 12px;
+}
+
+.field:last-child {
+  margin-bottom: 0;
+}
+
+.field label {
+  display: block;
+  font-size: 12px;
+  font-weight: 400;
+  color: var(--fg-secondary);
+  margin-bottom: 4px;
+  font-family: var(--font-sans);
+}
+
+.field input[type="text"],
+.field input[type="number"],
+.field input[type="password"],
+.field select,
+.field textarea {
+  width: 100%;
+  padding: 6px 8px;
+  font-size: 14px;
+  font-family: var(--font-serif);
+  color: var(--fg);
+  background: #FFFFFF;
+  border: 1px solid var(--border);
+  border-radius: 2px;
+  outline: none;
+}
+
+.field input:focus,
+.field select:focus,
+.field textarea:focus {
+  border-color: var(--accent);
+}
+
+.field textarea {
+  resize: vertical;
+  min-height: 60px;
+}
+
+.field-row {
+  display: flex;
+  gap: 12px;
+  align-items: flex-end;
+}
+
+.field-row .field {
+  flex: 1;
+}
+
+/* Checkbox toggle */
+.toggle {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 12px;
+}
+
+.toggle input[type="checkbox"] {
+  accent-color: var(--accent);
+  width: 16px;
+  height: 16px;
+}
+
+.toggle label {
+  font-size: 14px;
+  font-family: var(--font-sans);
+  color: var(--fg);
+  cursor: pointer;
+}
+
+/* Buttons */
+button {
+  font-family: var(--font-sans);
+  font-size: 13px;
+  padding: 6px 14px;
+  border: 1px solid var(--border);
+  border-radius: 2px;
+  background: var(--bg-surface);
+  color: var(--fg);
+  cursor: pointer;
+}
+
+button:hover {
+  background: var(--border);
+}
+
+button.primary {
+  background: var(--accent);
+  color: var(--accent-fg);
+  border-color: var(--accent);
+}
+
+button.primary:hover {
+  opacity: 0.9;
+}
+
+button.danger {
+  color: var(--color-error);
+  border-color: var(--color-error);
+}
+
+button.danger:hover {
+  background: var(--color-error);
+  color: var(--accent-fg);
+}
+
+button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.button-row {
+  display: flex;
+  gap: 8px;
+  margin-top: 12px;
+}
+
+/* Status indicators */
+.status-row {
+  display: flex;
+  justify-content: space-between;
+  padding: 6px 0;
+  border-bottom: 1px solid var(--border);
+  font-size: 13px;
+}
+
+.status-row:last-child {
+  border-bottom: none;
+}
+
+.status-row .label {
+  color: var(--fg-secondary);
+  font-family: var(--font-sans);
+}
+
+.status-row .value {
+  font-family: var(--font-mono);
+  font-size: 13px;
+  color: var(--mono-fg);
+  font-feature-settings: "liga" 0;
+}
+
+.status-dot {
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  margin-right: 6px;
+  vertical-align: middle;
+}
+
+.status-dot.ok { background: var(--color-success); }
+.status-dot.warn { background: var(--color-warning); }
+.status-dot.error { background: var(--color-error); }
+
+/* Log table */
+.log-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+}
+
+.log-table th {
+  text-align: left;
+  font-family: var(--font-sans);
+  font-size: 11px;
+  font-weight: 400;
+  color: var(--fg-secondary);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  padding: 4px 8px;
+  border-bottom: 1px solid var(--border);
+}
+
+.log-table td {
+  padding: 4px 8px;
+  border-bottom: 1px solid var(--border);
+  font-family: var(--font-mono);
+  font-size: 12px;
+  color: var(--mono-fg);
+  font-feature-settings: "liga" 0;
+}
+
+/* Toast / messages */
+.toast {
+  position: fixed;
+  bottom: 16px;
+  right: 16px;
+  padding: 8px 14px;
+  font-family: var(--font-sans);
+  font-size: 13px;
+  border-radius: 2px;
+  opacity: 0;
+  transition: opacity 160ms ease-out;
+  pointer-events: none;
+  z-index: 100;
+}
+
+.toast.visible {
+  opacity: 1;
+}
+
+.toast.success {
+  background: var(--color-success);
+  color: #FFFFFF;
+}
+
+.toast.error {
+  background: var(--color-error);
+  color: #FFFFFF;
+}
+
+/* Admin badge */
+.admin-badge {
+  display: inline-block;
+  font-family: var(--font-sans);
+  font-size: 10px;
+  font-weight: 400;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--accent-secondary);
+  border: 1px solid var(--accent-secondary);
+  border-radius: 2px;
+  padding: 1px 5px;
+  margin-left: 8px;
+  vertical-align: middle;
+}
+
+/* Console log viewer */
+.console-body {
+  padding: 0;
+}
+
+.console-log {
+  height: 240px;
+  overflow-y: auto;
+  font-family: var(--font-mono);
+  font-size: 12px;
+  line-height: 1.6;
+  color: var(--mono-fg);
+  background: #1E1E1E;
+  padding: 8px 12px;
+  font-feature-settings: "liga" 0;
+}
+
+.console-log .log-line {
+  white-space: pre-wrap;
+  word-break: break-all;
+}
+
+.console-log .log-line .ts {
+  color: #6A9955;
+}
+
+.console-log .log-line .lvl-DEBUG { color: #569CD6; }
+.console-log .log-line .lvl-INFO { color: #9CDCFE; }
+.console-log .log-line .lvl-WARNING { color: #DCDCAA; }
+.console-log .log-line .lvl-ERROR { color: #F44747; }
+
+.console-log .log-line .msg {
+  color: #D4D4D4;
+}
+
+/* Empty state */
+.empty {
+  font-size: 13px;
+  color: var(--fg-disabled);
+  font-style: italic;
+}

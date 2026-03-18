@@ -1,0 +1,123 @@
+@import "tailwindcss";
+@import "../ui/theme/variables.css";
+
+@source "../engine";
+@source "../ui";
+@source "../components";
+
+@theme {
+  --color-ws-bg: var(--ws-bg);
+  --color-ws-fg: var(--ws-fg);
+  --color-ws-muted: var(--ws-muted-fg);
+  --color-ws-accent: var(--ws-accent);
+  --color-ws-accent-fg: var(--ws-accent-fg);
+  --color-ws-text-secondary: var(--ws-text-secondary);
+  --color-ws-text-disabled: var(--ws-text-disabled);
+  --color-ws-error: var(--ws-color-error);
+  --color-ws-success: var(--ws-color-success);
+  --color-ws-warning: var(--ws-color-warning);
+  --color-ws-info: var(--ws-color-info);
+  --color-ws-panel-bg: var(--ws-panel-bg);
+  --color-ws-panel-fg: var(--ws-panel-fg);
+  --color-ws-panel-border: var(--ws-panel-border);
+  --color-ws-row-expanded-bg: var(--ws-row-expanded-bg);
+  --color-ws-group-bg: var(--ws-group-bg);
+  --color-ws-group-border: var(--ws-group-border);
+}
+
+body {
+  background-color: var(--ws-bg);
+  color: var(--ws-fg);
+  font-family: system-ui, -apple-system, sans-serif;
+  height: 100vh;
+  margin: 0;
+  overflow: hidden;
+}
+
+#app {
+  height: 100%;
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+}
+
+/* Module layout + sidebar */
+.module-layout { display: flex; height: 100vh; min-height: 0; }
+.module-sidebar {
+  width: 200px; flex-shrink: 0; background: var(--ws-panel-bg);
+  border-right: 1px solid var(--ws-panel-border);
+  display: flex; flex-direction: column; padding: 12px 0;
+  transition: width 0.15s ease;
+}
+.module-content { flex: 1; overflow: auto; }
+.sidebar-collapse-btn {
+  display: flex; align-items: center; justify-content: flex-end;
+  padding: 4px 12px 8px; border: none; background: none;
+  cursor: pointer; color: var(--ws-muted-fg); transition: color 0.15s;
+}
+.sidebar-collapse-btn:hover { color: var(--ws-accent); }
+.sidebar-back {
+  display: flex; align-items: center; gap: 6px;
+  font-size: 12px; font-weight: 500; color: var(--ws-muted-fg);
+  text-decoration: none; padding: 6px 16px; margin-bottom: 4px; transition: color 0.15s;
+}
+.sidebar-back:hover { color: var(--ws-accent); }
+.sidebar-title {
+  font-size: 11px; text-transform: uppercase; letter-spacing: 0.06em;
+  color: var(--ws-text-disabled); padding: 8px 16px 4px;
+}
+.sidebar-nav { display: flex; flex-direction: column; flex: 1; }
+.sidebar-link {
+  display: flex; align-items: center; gap: 8px;
+  font-size: 13px; font-weight: 500; text-decoration: none;
+  color: var(--ws-muted-fg); padding: 7px 16px;
+  border-left: 3px solid transparent; transition: color 0.15s, background 0.15s, border-color 0.15s;
+}
+.sidebar-link-icon { display: flex; align-items: center; flex-shrink: 0; }
+.sidebar-link:hover { color: var(--ws-fg); background: rgba(63, 92, 110, 0.04); }
+.sidebar-link.active { color: var(--ws-accent); border-left-color: var(--ws-accent); background: rgba(63, 92, 110, 0.06); }
+.sidebar-footer { border-top: 1px solid var(--ws-panel-border); padding-top: 8px; margin-top: 8px; }
+
+/* Sidebar collapsed state */
+.module-sidebar.collapsed { width: 48px; }
+.module-sidebar.collapsed .sidebar-title,
+.module-sidebar.collapsed .sidebar-link-label,
+.module-sidebar.collapsed .sidebar-back-label { display: none; }
+.module-sidebar.collapsed .sidebar-link { justify-content: center; padding: 10px 0; border-left: none; }
+.module-sidebar.collapsed .sidebar-link.active { background: rgba(63, 92, 110, 0.1); border-radius: 4px; margin: 0 6px; }
+.module-sidebar.collapsed .sidebar-back { justify-content: center; padding: 6px 0; }
+.module-sidebar.collapsed .sidebar-collapse-btn { justify-content: center; padding: 4px 0 8px; }
+.module-sidebar.collapsed .sidebar-footer .sidebar-link { justify-content: center; }
+
+/* Scrollbar styling */
+::-webkit-scrollbar {
+  width: var(--ws-scrollbar-width, 8px);
+}
+::-webkit-scrollbar-track {
+  background: var(--ws-scrollbar-track);
+}
+::-webkit-scrollbar-thumb {
+  background: var(--ws-scrollbar-thumb);
+  border-radius: 4px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: var(--ws-scrollbar-thumb-hover);
+}
+
+/* Dockview theme overrides */
+.dockview-theme-light {
+  --dv-paneview-header-border-color: var(--ws-panel-border);
+  --dv-tabs-and-actions-container-background-color: var(--ws-tabstrip-bg);
+  --dv-activegroup-visiblepanel-tab-background-color: var(--ws-tab-bg-active);
+  --dv-activegroup-hiddenpanel-tab-background-color: var(--ws-tab-bg);
+  --dv-inactivegroup-visiblepanel-tab-background-color: var(--ws-tab-bg-active);
+  --dv-inactivegroup-hiddenpanel-tab-background-color: var(--ws-tab-bg);
+  --dv-tab-divider-color: var(--ws-panel-border);
+  --dv-activegroup-visiblepanel-tab-color: var(--ws-tab-fg-active);
+  --dv-activegroup-hiddenpanel-tab-color: var(--ws-tab-fg);
+  --dv-inactivegroup-visiblepanel-tab-color: var(--ws-tab-fg-active);
+  --dv-inactivegroup-hiddenpanel-tab-color: var(--ws-tab-fg);
+  --dv-separator-border: var(--ws-sash-bg-hover);
+  --dv-background-color: var(--ws-bg);
+  --dv-group-view-background-color: var(--ws-panel-bg);
+}

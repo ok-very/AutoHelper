@@ -19,22 +19,25 @@ from .schemas import (
 
 class HealthService:
     """Service for health checks and status."""
-    
+
     def __init__(self, settings: Settings | None = None) -> None:
         self._settings = settings or get_settings()
-    
+
     def get_health(self) -> HealthResponse:
         """Simple health check."""
+        import sys
+
         return HealthResponse(
             status="ok",
             timestamp=datetime.now(UTC),
             version=__version__,
+            mode="frozen" if getattr(sys, "frozen", False) else "source",
         )
-    
+
     def get_status(self) -> StatusResponse:
         """Full status with diagnostics."""
         db = get_db()
-        
+
         # Check DB reachability
         db_reachable = False
         try:
@@ -42,7 +45,7 @@ class HealthService:
             db_reachable = True
         except Exception:
             pass
-        
+
         # Get migration status
         migration_status = MigrationStatus(applied_count=0, pending_count=0)
         if db_reachable:
@@ -54,7 +57,7 @@ class HealthService:
                 )
             except Exception:
                 pass
-        
+
         # Get roots status
         roots: list[RootStatus] = []
         total_files = 0
@@ -67,17 +70,19 @@ class HealthService:
                 """)
                 for row in cursor.fetchall():
                     path = Path(row["path"])
-                    roots.append(RootStatus(
-                        root_id=row["root_id"],
-                        path=row["path"],
-                        enabled=bool(row["enabled"]),
-                        accessible=path.exists() and path.is_dir(),
-                        file_count=row["file_count"],
-                    ))
+                    roots.append(
+                        RootStatus(
+                            root_id=row["root_id"],
+                            path=row["path"],
+                            enabled=bool(row["enabled"]),
+                            accessible=path.exists() and path.is_dir(),
+                            file_count=row["file_count"],
+                        )
+                    )
                     total_files += row["file_count"]
             except Exception:
                 pass
-        
+
         # Get last index run
         index_status = IndexStatus(
             last_run_id=None,
@@ -101,7 +106,7 @@ class HealthService:
                     index_status.last_run_status = row["status"]
             except Exception:
                 pass
-        
+
         return StatusResponse(
             status="ok" if db_reachable else "degraded",
             version=__version__,

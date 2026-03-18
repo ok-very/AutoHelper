@@ -1,0 +1,101 @@
+/* Base overrides — sits on top of gdocs.css */
+
+/* ── Page layout ── */
+@page {
+    size: 8.5in 11in;
+    margin: 0.5in;
+}
+
+body.doc-content {
+    max-width: 7.5in;
+    padding: 0.5in 0.6in;
+    margin: 0 auto;
+    font-family: "Calibri", sans-serif;
+    font-size: 11pt;
+    line-height: 1.15;
+    color: #000;
+}
+
+/* ── Preamble overview: single-column ── */
+.bfa-preamble {
+    margin-bottom: 12pt;
+}
+
+.bfa-preamble p {
+    line-height: 1.15 !important;
+}
+
+.bfa-preamble table {
+    font-size: 10pt;
+    break-inside: avoid;
+}
+
+/* ── Preamble lists: two-column (Proposals, Longlists, etc.) ── */
+.bfa-preamble-lists {
+    column-count: 2;
+    column-gap: 24pt;
+    column-rule: 1px solid #cccccc;
+    margin-bottom: 12pt;
+}
+
+.bfa-preamble-lists p {
+    line-height: 1.15 !important;
+}
+
+/* ═══════════════════════════════════════════
+   PROJECT CARD LAYOUT
+   (styles are now inline — no class-based overrides needed)
+   ═══════════════════════════════════════════ */
+.bfa-project {
+    margin-bottom: 10pt;
+    padding-bottom: 6pt;
+    border-bottom: 1px solid #d0d0d0;
+}
+
+.bfa-project .bfa-header h3 {
+    margin-top: 0;
+    margin-bottom: 2pt;
+    padding-top: 2pt;
+}
+
+/* ── Compact paragraph spacing ── */
+.bfa-project p {
+    padding-top: 0pt !important;
+    padding-bottom: 0pt !important;
+    margin-top: 0 !important;
+    margin-bottom: 0 !important;
+    line-height: 1.15 !important;
+    font-size: 10pt !important;
+}
+
+/* ── Consistent indentation within sections ── */
+.bfa-section p {
+    margin-left: 10pt !important;
+}
+.bfa-section ul, .bfa-section ol {
+    margin-left: 28pt !important;
+    padding-left: 0 !important;
+    margin-top: 0 !important;
+    margin-bottom: 0 !important;
+}
+.bfa-section li {
+    font-size: 10pt !important;
+    line-height: 1.15 !important;
+    list-style-type: disc;
+}
+
+/* ── Print support ── */
+@media print {
+    body.doc-content {
+        max-width: none;
+        padding: 0.4in;
+    }
+    .bfa-preamble-lists {
+        column-count: 2;
+        column-gap: 20pt;
+        column-rule: none;
+    }
+    .bfa-project {
+        break-inside: avoid;
+    }
+}

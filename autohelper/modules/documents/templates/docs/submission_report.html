@@ -1,0 +1,91 @@
+{% extends "layouts/base.html" %}
+{% from "components/thumbnail.jinja" import thumbnail %}
+{% from "components/badge.jinja" import badge %}
+
+{% block title %}{{ manifest_name }} — Report{% endblock %}
+
+{% block extra_styles %}
+.summary-bar {
+    display: flex;
+    gap: 16px;
+    margin-bottom: 12px;
+    font-size: 11px;
+    color: var(--color-muted);
+}
+.summary-bar strong { color: var(--color-fg); }
+{% endblock %}
+
+{% block content %}
+<h1>{{ manifest_name }}</h1>
+<p class="subtitle">Generated {{ generated_at }}</p>
+
+<div class="summary-bar">
+    <span><strong>{{ rows | length }}</strong> submissions</span>
+    <span><strong>{{ rows | selectattr("confirmed") | list | length }}</strong> confirmed</span>
+    {% for tier_id, tier_label in tier_labels.items() %}
+    <span class="dim">{{ tier_label }}</span>
+    {% endfor %}
+</div>
+
+<table>
+    <thead>
+        <tr>
+            <th></th>
+            <th>Artist</th>
+            <th>Title</th>
+            <th>Location</th>
+            <th>Dimensions</th>
+            <th>Size</th>
+            <th>DPI Selections</th>
+            <th>Floor</th>
+            <th>Category</th>
+            <th>Rating</th>
+            <th>Status</th>
+        </tr>
+    </thead>
+    <tbody>
+        {% for row in rows %}
+        <tr>
+            <td>{{ thumbnail(row.thumb_url, row.artist_name) }}</td>
+            <td><strong>{{ row.artist_name }}</strong></td>
+            <td>{{ row.title }}</td>
+            <td>{{ row.location_text or "\u2014" }}</td>
+            <td class="nowrap dim">
+                {% if row.width_px and row.height_px %}
+                {{ row.width_px }}&times;{{ row.height_px }}
+                {% else %}
+                &mdash;
+                {% endif %}
+            </td>
+            <td class="nowrap dim">{{ row.file_bytes | format_bytes }}</td>
+            <td>
+                {% for dpi in row.selected_dpis %}
+                {{ badge(dpi, "blue") }}
+                {% endfor %}
+                {% if not row.selected_dpis %}&mdash;{% endif %}
+            </td>
+            <td>
+                {% for f in row.floor %}
+                {{ badge(f, "green") }}
+                {% endfor %}
+                {% if not row.floor %}&mdash;{% endif %}
+            </td>
+            <td>
+                {% for c in row.category %}
+                {{ badge(c, "gray") }}
+                {% endfor %}
+                {% if not row.category %}&mdash;{% endif %}
+            </td>
+            <td class="rats">{{ row.rank | rats }}</td>
+            <td>
+                {% if row.confirmed %}
+                <span class="confirmed">&#10003;</span>
+                {% else %}
+                <span class="dim">&mdash;</span>
+                {% endif %}
+            </td>
+        </tr>
+        {% endfor %}
+    </tbody>
+</table>
+{% endblock %}

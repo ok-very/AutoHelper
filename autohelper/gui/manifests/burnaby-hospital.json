@@ -1,0 +1,176 @@
+{
+  "id": "burnaby-hospital-2026",
+  "name": "Burnaby Hospital Photo Submissions",
+  "version": 1,
+  "recordId": "excel_row",
+
+  "dataSources": {
+    "records": "/manifests/data/records.json",
+        "imageBases": [
+      "E:/OneDrive - Ballard Fine Art/BALLARD FINE ART - ALL FILES/3. CORPORATE ART/ALL PROJECTS/Burnaby Hospital/Special Projects/Submissions for print",
+      "E:/OneDrive - Ballard Fine Art/Ballard Fine Art Team Site - Burnaby Hospital Photo Submissions",
+      "E:/scratch/BH_staff-prints"
+    ]
+  },
+
+  "fields": {
+    "excel_row":      { "type": "number",      "label": "#",           "column": true, "width": 50 },
+    "artist_name":    { "type": "string",      "label": "Artist",      "column": true, "searchable": true, "detail": true, "section": "info" },
+    "title":          { "type": "string",      "label": "Title",       "column": true, "searchable": true, "detail": true, "section": "info" },
+    "submission_date":{ "type": "string",      "label": "Date",        "detail": true, "section": "info" },
+    "location_text":  { "type": "string",      "label": "Location",    "searchable": true, "detail": true, "section": "info" },
+    "ecosystem":      { "type": "badge",       "label": "Eco" },
+    "floor":          { "type": "assignment",  "label": "Floor",       "column": true, "group": "floor" },
+    "category":       { "type": "assignment",  "label": "Cat",         "column": true, "group": "category" },
+    "resolution":     { "type": "string",      "label": "Resolution",  "column": true },
+    "source_type":    { "type": "enum",        "label": "Src",         "column": true, "options": ["hq", "upload", "manual", "missing"] },
+    "rank":           { "type": "number",      "label": "Rnk",         "column": true, "editable": true, "min": 0, "max": 999 },
+    "report1":        { "type": "boolean",     "label": "Report 1" },
+    "report2":        { "type": "boolean",     "label": "Report 2" },
+    "description":    { "type": "text",        "label": "Description", "detail": true, "readonly": true, "searchable": true, "section": "info" },
+    "comments":       { "type": "text",        "label": "Comments",    "detail": true, "readonly": true, "section": "info" },
+    "match_reason":   { "type": "string",      "label": "Match",       "detail": true, "section": "image" },
+    "image_path":     { "type": "image_path",  "label": "Image" },
+    "width":          { "type": "number",      "label": "Width (px)" },
+    "height":         { "type": "number",      "label": "Height (px)" },
+    "file_bytes":     { "type": "number",      "label": "File Size" },
+    "reviewer_notes": { "type": "text",        "label": "Notes",       "detail": true, "editable": true, "section": "review" }
+  },
+
+  "assignmentGroups": {
+    "floor": {
+      "label": "Floor Assignment",
+      "options": [
+        { "value": "L1_coast",         "label": "L1 Coast",         "emoji": "\ud83c\udf0a" },
+        { "value": "L2_rainforest",    "label": "L2 Rainforest",    "emoji": "\ud83c\udf32" },
+        { "value": "L3_river",         "label": "L3 River",         "emoji": "\ud83c\udfde\ufe0f" },
+        { "value": "L4_lakes_marshes", "label": "L4 Lakes/Marshes", "emoji": "\ud83e\udd86" },
+        { "value": "L5_sky",          "label": "L5 Sky",            "emoji": "\u2601\ufe0f" }
+      ],
+      "shortcutKeys": {
+        "1": "L1_coast",
+        "2": "L2_rainforest",
+        "3": "L3_river",
+        "4": "L4_lakes_marshes",
+        "5": "L5_sky",
+        "0": null
+      }
+    },
+    "category": {
+      "label": "Category",
+      "options": [
+        { "value": "hangable",         "label": "Hangable" },
+        { "value": "vinyl",            "label": "Vinyl" },
+        { "value": "staff_print_book", "label": "Staff Print Book" },
+        { "value": "reject",           "label": "Reject" }
+      ],
+      "shortcutKeys": {
+        "h": "hangable",
+        "v": "vinyl",
+        "b": "staff_print_book",
+        "r": "reject"
+      }
+    }
+  },
+
+  "preview": {
+    "imageField": "image_path",
+    "primaryLabel": "artist_name",
+    "secondaryLabel": "title",
+    "availabilityField": "source_type",
+    "missingValue": "missing",
+    "badges": [
+      {
+        "field": "ecosystem",
+        "fromGroup": "floor",
+        "variantMap": {}
+      },
+      {
+        "field": "source_type",
+        "transform": "uppercase",
+        "variantMap": {
+          "hq": "success",
+          "upload": "default",
+          "manual": "default",
+          "missing": "error"
+        }
+      }
+    ]
+  },
+
+  "imagePipeline": {
+    "widthField": "width",
+    "heightField": "height",
+    "fileSizeField": "file_bytes",
+    "metricTiers": [
+      { "id": "native_300",  "label": "Native @300dpi",  "dpi": 300, "scale": 1 },
+      { "id": "native_250",  "label": "Native @250dpi",  "dpi": 250, "scale": 1 },
+      { "id": "native_200",  "label": "Native @200dpi",  "dpi": 200, "scale": 1 },
+      { "id": "vinyl_150",   "label": "Vinyl @150dpi",    "dpi": 150, "scale": 1 },
+      { "id": "vinyl_100",   "label": "Vinyl @100dpi",    "dpi": 100, "scale": 1 }
+    ],
+    "viabilityRules": [
+      { "id": "vinyl_viable", "label": "Vinyl Viable (\u22653'\u00d74')", "metric": "vinyl_150", "minInches": 48, "minShortInches": 36 }
+    ]
+  },
+
+  "rowStyles": [
+    {
+      "field": "source_type",
+      "condition": "equals",
+      "value": "missing",
+      "className": "text-red-500",
+      "priority": 10
+    },
+    {
+      "field": "report1",
+      "condition": "truthy",
+      "className": "text-blue-700",
+      "priority": 5
+    }
+  ],
+
+  "filters": [
+    { "field": "floor",       "label": "Floor",     "type": "assignment" },
+    { "field": "category",    "label": "Category",  "type": "assignment" },
+    { "field": "source_type", "label": "Source",     "type": "enum", "options": ["hq", "upload", "manual", "missing"] },
+    { "field": "report1",     "label": "Report 1",  "type": "boolean" },
+    { "field": "ecosystem",   "label": "Ecosystem",  "type": "enum" }
+  ],
+
+  "tallies": [
+    { "label": "Confirmed",       "countWhere": { "confirmed": true } },
+    { "label": "L1 Coast",        "countWhere": { "confirmed": true, "floor": "L1_coast" } },
+    { "label": "L2 Rainforest",   "countWhere": { "confirmed": true, "floor": "L2_rainforest" } },
+    { "label": "L3 River",        "countWhere": { "confirmed": true, "floor": "L3_river" } },
+    { "label": "L4 Lakes",        "countWhere": { "confirmed": true, "floor": "L4_lakes_marshes" } },
+    { "label": "L5 Sky",          "countWhere": { "confirmed": true, "floor": "L5_sky" } },
+    { "label": "Hangable",        "countWhere": { "confirmed": true, "category": "hangable" } },
+    { "label": "Vinyl",           "countWhere": { "confirmed": true, "category": "vinyl" } },
+    { "label": "Staff Book",      "countWhere": { "confirmed": true, "category": "staff_print_book" } },
+    { "label": "Rejected",        "countWhere": { "confirmed": true, "category": "reject" } }
+  ],
+
+  "confirmation": {
+    "requiredFields": ["floor", "category", "image_path"],
+    "requiredUnless": {
+      "floor": { "category": "staff_print_book" }
+    },
+    "rejectGroup": "category",
+    "rejectValue": "reject"
+  },
+
+  "report": {
+    "thumbnailMaxArea": 15000,
+    "thumbnailQuality": 80
+  },
+
+  "output": {
+    "basePath": "E:/scratch/BH_staff-prints",
+    "structure": "{floor}/{category}",
+    "filenameTemplate": "{rank:03}_{artist_name}_{title}_{hash_id:10}.{ext}",
+    "specialPaths": {
+      "staff_print_book": "staff-print-book"
+    }
+  }
+}

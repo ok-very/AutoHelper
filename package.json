@@ -1,0 +1,13 @@
+{
+  "name": "autohelper",
+  "version": "0.1.0",
+  "private": true,
+  "packageManager": "pnpm@9.15.0",
+  "scripts": {
+    "build:ui": "pnpm --filter autohelper-ui build",
+    "dev:ui": "pnpm --filter autohelper-ui dev",
+    "dev:desktop": "pnpm --filter autohelper-desktop dev",
+    "build:desktop": "pnpm --filter autohelper-desktop build",
+    "package:desktop": "pnpm --filter autohelper-desktop package"
+  }
+}

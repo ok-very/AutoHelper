@@ -1,0 +1,6 @@
+# PyInstaller output (copied by build_installer.py)
+/autohelper/
+
+# Electron Forge output
+/out/
+/.vite/

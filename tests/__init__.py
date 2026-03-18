@@ -1,1 +1,0 @@
-"""AutoHelper tests."""

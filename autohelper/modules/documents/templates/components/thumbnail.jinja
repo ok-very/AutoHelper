@@ -1,0 +1,7 @@
+{% macro thumbnail(thumb_url, alt="") %}
+{% if thumb_url %}
+<img src="{{ thumb_url }}" alt="{{ alt }}" class="thumb" loading="lazy">
+{% else %}
+<div class="thumb" style="display:flex;align-items:center;justify-content:center;color:#9ca3af;font-size:9px;">No img</div>
+{% endif %}
+{% endmacro %}

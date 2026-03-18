@@ -1,0 +1,112 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Artist Settings — AutoHelper</title>
+  <link rel="stylesheet" href="/artists-dashboard/static/shared.css">
+</head>
+<body>
+  <div id="app">
+    <nav class="artist-nav">
+      <a href="/artists-settings" class="nav-link active">Settings</a>
+      <a href="/artists-health" class="nav-link">Health</a>
+      <a href="/artists-recon" class="nav-link">Reconciliation</a>
+      <a href="/artists-dashboard" class="nav-link">Directory</a>
+    </nav>
+
+    <header class="header">
+      <h1>Artist Settings</h1>
+    </header>
+
+    <!-- Config settings -->
+    <div class="settings-grid">
+      <div class="settings-card">
+        <h3>Storage &amp; Scanning</h3>
+        <div class="setting-row">
+          <span class="setting-label">Storage Root</span>
+          <div style="display:flex;gap:6px;flex:1">
+            <input type="text" id="cfg-storage-root" class="setting-input" placeholder="/path/to/artist/files" style="flex:1">
+            <button class="btn" id="btn-browse-root">Browse</button>
+          </div>
+        </div>
+        <div class="setting-row">
+          <span class="setting-label">Ground Truth CSV</span>
+          <div style="display:flex;gap:6px;flex:1">
+            <input type="text" id="cfg-ground-truth" class="setting-input" placeholder="/path/to/final_7450_full.csv" style="flex:1">
+            <button class="btn" id="btn-browse-gt">Browse</button>
+          </div>
+        </div>
+        <div class="setting-row">
+          <span class="setting-label">Enable Scanning</span>
+          <label class="toggle">
+            <input type="checkbox" id="cfg-scan-enabled">
+            <span class="toggle-slider"></span>
+          </label>
+        </div>
+        <div class="setting-row">
+          <span class="setting-label">Auto-Rescan on Change</span>
+          <label class="toggle">
+            <input type="checkbox" id="cfg-scan-on-change">
+            <span class="toggle-slider"></span>
+          </label>
+        </div>
+        <div style="margin-top:12px;display:flex;gap:8px">
+          <button class="btn btn-primary" id="btn-save-config">Save Config</button>
+          <span id="config-feedback" class="save-feedback"></span>
+        </div>
+      </div>
+
+      <div class="settings-card">
+        <h3>Scan Controls</h3>
+        <div style="margin-bottom:8px;display:flex;gap:8px;align-items:center">
+          <button class="btn btn-primary" id="btn-scan">Scan All</button>
+          <button class="btn btn-warning" id="btn-scan-stop" disabled>Stop</button>
+          <span id="scan-status" class="scan-status" style="margin-left:4px"></span>
+        </div>
+        <div id="scan-info" style="font-size:12px;color:var(--fg-secondary);margin-bottom:8px"></div>
+        <div id="scan-terminal" class="scan-terminal"></div>
+      </div>
+    </div>
+
+    <!-- Lexicon editor -->
+    <div class="settings-card full-width" style="margin-bottom:16px">
+      <h3>Lexicon Configuration</h3>
+      <p style="font-size:12px;color:var(--fg-secondary);margin-bottom:12px">
+        Edit the artist lexicon (category profiles, subfolder aliases, completeness weights, identity options, affiliation types, folder name fixes, multi-folder overrides).
+      </p>
+
+      <div id="lexicon-tabs" style="display:flex;gap:0;margin-bottom:12px;border-bottom:1px solid var(--border)">
+        <button class="btn btn-ghost lexicon-tab active" data-section="categories">Categories</button>
+        <button class="btn btn-ghost lexicon-tab" data-section="subfolder_aliases">Aliases</button>
+        <button class="btn btn-ghost lexicon-tab" data-section="completeness_weights">Weights</button>
+        <button class="btn btn-ghost lexicon-tab" data-section="identity_options">Identities</button>
+        <button class="btn btn-ghost lexicon-tab" data-section="affiliation_types">Affiliation Types</button>
+        <button class="btn btn-ghost lexicon-tab" data-section="location_types">Location Types</button>
+        <button class="btn btn-ghost lexicon-tab" data-section="name_types">Name Types</button>
+        <button class="btn btn-ghost lexicon-tab" data-section="career_stages">Career Stages</button>
+        <button class="btn btn-ghost lexicon-tab" data-section="folder_name_fixes">Fixes</button>
+        <button class="btn btn-ghost lexicon-tab" data-section="multi_folder_artists">Multi-Folder</button>
+        <button class="btn btn-ghost lexicon-tab" data-section="full">Full JSON</button>
+      </div>
+
+      <div id="lexicon-editor-area">
+        <textarea id="lexicon-editor" class="json-editor" rows="16"></textarea>
+      </div>
+
+      <div style="margin-top:10px;display:flex;gap:8px;align-items:center">
+        <button class="btn btn-primary" id="btn-save-lexicon">Save Lexicon</button>
+        <button class="btn" id="btn-reset-lexicon">Reset to Defaults</button>
+        <button class="btn" id="btn-export-lexicon">Export</button>
+        <label class="btn" style="margin:0">
+          Import <input type="file" id="btn-import-lexicon" accept=".json" style="display:none">
+        </label>
+        <span id="lexicon-feedback" class="save-feedback"></span>
+      </div>
+    </div>
+  </div>
+
+  <script src="/artists-dashboard/static/nav.js"></script>
+  <script src="/artists-dashboard/static/settings.js"></script>
+</body>
+</html>

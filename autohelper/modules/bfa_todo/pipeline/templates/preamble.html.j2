@@ -1,0 +1,10 @@
+<!-- PREAMBLE_START: {{ p.slug }} -->
+<!-- FIELD: Uid|{{ p.uid }} -->
+<section class="bfa-preamble" data-preamble-uid="{{ p.uid }}" id="p-{{ p.slug }}">
+{% for sec_name, sec_data in p.sections.items() %}
+{% if sec_data.html and sec_data.html.strip() %}
+{{ sec_data.html }}
+{% endif %}
+{% endfor %}
+</section>
+<!-- PREAMBLE_END: {{ p.slug }} -->

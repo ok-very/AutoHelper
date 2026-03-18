@@ -1,0 +1,1 @@
+import{j as e}from"./settings-Wa-j8E77.js";function t(a){return a?a.charAt(0).toUpperCase()+a.slice(1):""}function r(a){return a?a.split(/[/\\]/).pop()??"":""}function s({category:a}){return e.jsx("span",{className:`badge badge-${a}`,children:t(a)})}export{s as C,r as b,t as c};

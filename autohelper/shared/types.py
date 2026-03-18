@@ -12,7 +12,7 @@ from typing import Any
 
 class IndexRunStatus(str, Enum):
     """Status of an index run."""
-    
+
     PENDING = "pending"
     RUNNING = "running"
     COMPLETED = "completed"
@@ -23,7 +23,7 @@ class IndexRunStatus(str, Enum):
 @dataclass
 class RequestContext:
     """Context attached to every request for traceability."""
-    
+
     request_id: str
     work_item_id: str | None = None
     context_id: str | None = None
@@ -35,7 +35,7 @@ class RequestContext:
 @dataclass
 class RootInfo:
     """Information about a configured root directory."""
-    
+
     root_id: str
     path: Path
     enabled: bool
@@ -47,7 +47,7 @@ class RootInfo:
 @dataclass
 class FileInfo:
     """File metadata from the index."""
-    
+
     file_id: str
     root_id: str
     canonical_path: str
@@ -65,7 +65,7 @@ class FileInfo:
 @dataclass
 class OperationResult:
     """Result of a filesystem operation."""
-    
+
     success: bool
     message: str
     details: dict[str, Any] = field(default_factory=dict)

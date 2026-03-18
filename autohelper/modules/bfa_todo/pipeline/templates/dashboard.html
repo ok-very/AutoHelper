@@ -1,0 +1,620 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>BFA Portfolio Dashboard</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Carlito:ital,wght@0,400;0,700;1,400;1,700&display=swap" rel="stylesheet">
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+
+  body {
+    font-family: "Calibri", "Carlito", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    background: #f8f9fa; color: #222; line-height: 1.5;
+  }
+
+  /* ── Header ── */
+  .header {
+    background: #fff; border-bottom: 1px solid #ddd; padding: 16px 32px;
+    display: flex; justify-content: space-between; align-items: center;
+    position: sticky; top: 0; z-index: 100;
+  }
+  .header h1 { font-size: 1.3rem; font-weight: 700; }
+  .header h1 span { color: #888; font-weight: 400; }
+  .search-box {
+    padding: 8px 14px; border: 1px solid #ccc; border-radius: 6px;
+    font-size: 0.9rem; width: 280px; outline: none;
+    font-family: inherit;
+  }
+  .search-box:focus { border-color: #4a90d9; box-shadow: 0 0 0 2px rgba(74,144,217,0.15); }
+
+  .container { max-width: 1400px; margin: 0 auto; padding: 20px 32px; }
+
+  /* ── Stats bar ── */
+  .stats {
+    background: #fff; padding: 16px 20px; border-radius: 8px; margin-bottom: 16px;
+    display: flex; gap: 28px; flex-wrap: wrap; align-items: center;
+    border: 1px solid #e9ecef;
+  }
+  .stat { text-align: center; min-width: 80px; }
+  .stat-num { font-size: 1.8rem; font-weight: 700; line-height: 1.1; }
+  .stat-label { font-size: 0.7rem; color: #666; text-transform: uppercase; letter-spacing: 0.03em; }
+  .stat-divider { width: 1px; height: 40px; background: #e0e0e0; }
+
+  /* ── Phase pipeline ── */
+  .filters {
+    background: #fff; padding: 14px 20px; border-radius: 8px; margin-bottom: 16px;
+    border: 1px solid #e9ecef;
+  }
+  .filter-row { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; margin-bottom: 8px; }
+  .filter-row:last-child { margin-bottom: 0; }
+  .filter-label { font-size: 0.75rem; color: #888; text-transform: uppercase; font-weight: 600; min-width: 50px; }
+
+  .phase-pill {
+    display: inline-flex; align-items: center; gap: 5px;
+    padding: 4px 12px; border-radius: 14px; font-size: 0.8rem;
+    cursor: pointer; border: 2px solid transparent; transition: all 0.15s;
+    user-select: none; font-family: inherit;
+  }
+  .phase-pill:hover { opacity: 0.85; }
+  .phase-pill.active { border-color: #333; box-shadow: 0 1px 3px rgba(0,0,0,0.15); }
+  .phase-pill .pill-count { font-weight: 700; }
+
+  .filter-select {
+    padding: 5px 10px; border: 1px solid #ccc; border-radius: 4px;
+    font-size: 0.8rem; background: #fff; cursor: pointer;
+    font-family: inherit;
+  }
+  .filter-clear {
+    padding: 4px 10px; border: 1px solid #ccc; border-radius: 4px;
+    font-size: 0.75rem; background: #fff; cursor: pointer; color: #666;
+    font-family: inherit;
+  }
+  .filter-clear:hover { background: #f0f0f0; }
+
+  /* ── Table ── */
+  .table-wrap {
+    background: #fff; border-radius: 8px; border: 1px solid #e9ecef;
+    overflow-x: auto;
+  }
+  table { width: 100%; border-collapse: collapse; min-width: 900px; }
+  th {
+    text-align: left; font-size: 0.72rem; text-transform: uppercase;
+    color: #888; padding: 10px 14px; border-bottom: 2px solid #eee;
+    background: #fafafa; position: sticky; top: 0; z-index: 2;
+    cursor: pointer; user-select: none; white-space: nowrap;
+    letter-spacing: 0.03em;
+  }
+  th:hover { color: #333; }
+  th .sort-arrow { margin-left: 3px; font-size: 0.65rem; }
+  td {
+    padding: 9px 14px; border-bottom: 1px solid #f0f0f0;
+    font-size: 0.85rem; vertical-align: middle;
+  }
+  tr.project-row { cursor: pointer; transition: background 0.1s; }
+  tr.project-row:hover { background: #f6f8fa; }
+  tr.project-row.expanded { background: #f0f4f8; }
+
+  .client-cell { font-weight: 600; }
+  .phase-badge {
+    display: inline-block; padding: 2px 10px; border-radius: 10px;
+    font-size: 0.75rem; font-weight: 600; white-space: nowrap;
+  }
+  .budget-cell { font-family: "SF Mono", "Consolas", "Carlito", monospace; font-size: 0.8rem; white-space: nowrap; }
+  .team-cell { font-size: 0.8rem; color: #555; white-space: nowrap; }
+  .city-cell { font-size: 0.83rem; }
+  .install-cell { font-size: 0.8rem; color: #555; white-space: nowrap; }
+
+  /* Budget bar */
+  .budget-bar-wrap { display: flex; align-items: center; gap: 8px; }
+  .budget-bar {
+    height: 6px; border-radius: 3px; background: #4a90d9; opacity: 0.6;
+    min-width: 2px; transition: width 0.3s;
+  }
+
+  /* ── Detail row ── */
+  .detail-row td { padding: 0; background: #f6f8fa; }
+  .detail-card {
+    padding: 16px 28px 20px; display: grid;
+    grid-template-columns: 1fr 1fr; gap: 12px 28px;
+  }
+  .detail-section h4 {
+    font-size: 0.72rem; text-transform: uppercase; color: #888;
+    margin-bottom: 4px; letter-spacing: 0.03em;
+  }
+  .detail-section p, .detail-section li {
+    font-size: 0.83rem; line-height: 1.5; color: #333;
+  }
+  .detail-section ul { padding-left: 18px; margin: 0; }
+  .detail-section li { margin-bottom: 2px; }
+  .detail-section .step-date {
+    font-size: 0.72rem; color: #888; margin-left: 4px;
+  }
+  .detail-section.full-width { grid-column: 1 / -1; }
+  .detail-link { color: #4a90d9; text-decoration: none; font-size: 0.8rem; }
+  .detail-link:hover { text-decoration: underline; }
+
+  /* ── Footer ── */
+  .footer {
+    padding: 12px 20px; color: #888; font-size: 0.8rem;
+    display: flex; justify-content: space-between; align-items: center;
+  }
+
+  /* ── Responsive ── */
+  @media (max-width: 768px) {
+    .header { padding: 12px 16px; flex-direction: column; gap: 8px; }
+    .search-box { width: 100%; }
+    .container { padding: 12px 16px; }
+    .stats { gap: 16px; }
+    .detail-card { grid-template-columns: 1fr; }
+  }
+</style>
+</head>
+<body>
+
+<div class="header">
+  <h1>BFA Portfolio Dashboard <span id="projectCount"></span></h1>
+  <input type="text" class="search-box" id="searchBox" placeholder="Search client, project, city, artist...">
+</div>
+
+<div class="container">
+  <div class="stats" id="statsBar">
+    <div class="stat"><div class="stat-num" id="statTotal">-</div><div class="stat-label">Projects</div></div>
+    <div class="stat-divider"></div>
+    <div class="stat"><div class="stat-num" id="statBudget">-</div><div class="stat-label">Art Budget</div></div>
+    <div class="stat-divider"></div>
+    <div class="stat"><div class="stat-num" id="statSteps">-</div><div class="stat-label">Next Steps</div></div>
+    <div class="stat-divider"></div>
+    <div class="stat"><div class="stat-num" id="statTBC">-</div><div class="stat-label">Phase TBC</div></div>
+  </div>
+
+  <div class="filters" id="filtersBar">
+    <div class="filter-row">
+      <span class="filter-label">Phase</span>
+      <div id="phasePills"></div>
+    </div>
+    <div class="filter-row">
+      <span class="filter-label">Team</span>
+      <select class="filter-select" id="teamFilter"><option value="">All teams</option></select>
+      <span class="filter-label" style="margin-left:12px">City</span>
+      <select class="filter-select" id="cityFilter"><option value="">All cities</option></select>
+      <button class="filter-clear" id="clearFilters" style="margin-left:auto">Clear filters</button>
+    </div>
+  </div>
+
+  <div class="table-wrap">
+    <table>
+      <thead>
+        <tr>
+          <th data-sort="owner_team" style="width:70px">Team <span class="sort-arrow"></span></th>
+          <th data-sort="client">Client <span class="sort-arrow"></span></th>
+          <th data-sort="project_name">Project <span class="sort-arrow"></span></th>
+          <th data-sort="city" style="width:110px">City <span class="sort-arrow"></span></th>
+          <th data-sort="phase" style="width:140px">Phase <span class="sort-arrow"></span></th>
+          <th data-sort="budget" style="width:180px">Art Budget <span class="sort-arrow"></span></th>
+          <th data-sort="install" style="width:110px">Install <span class="sort-arrow"></span></th>
+        </tr>
+      </thead>
+      <tbody id="tableBody"></tbody>
+    </table>
+  </div>
+
+  <div class="footer">
+    <span id="shownCount">Loading...</span>
+    <span id="lastUpdated"></span>
+  </div>
+</div>
+
+<script>
+const PHASE_COLORS = {
+  'TBC':                { color: '#6c757d', bg: '#e9ecef' },
+  'Intake/Scoping':     { color: '#17a2b8', bg: '#d1ecf1' },
+  'EOI/Shortlist':      { color: '#6f42c1', bg: '#e8daf5' },
+  'Contracting':        { color: '#0d6efd', bg: '#cfe2ff' },
+  'Design development': { color: '#198754', bg: '#d1e7dd' },
+  'Approvals':          { color: '#fd7e14', bg: '#fff3cd' },
+  'Fabrication':        { color: '#dc3545', bg: '#f8d7da' },
+  'Install':            { color: '#20c997', bg: '#d2f4ea' },
+  'Closeout':           { color: '#795548', bg: '#d7ccc8' },
+};
+
+let ALL_PROJECTS = [];
+let maxBudget = 0;
+let currentSort = { key: 'client', dir: 'asc' };
+let filters = { phase: null, team: '', city: '', search: '' };
+let expandedUid = null;
+
+function parseBudget(str) {
+  if (!str || str === '$TBC') return 0;
+  const m = str.replace(/[^0-9.KkMm]/g, '');
+  let n = parseFloat(m) || 0;
+  if (/[Kk]/.test(str) && n < 10000) n *= 1000;
+  if (/[Mm]/.test(str) && n < 10000) n *= 1000000;
+  return n;
+}
+
+function formatBudget(n) {
+  if (!n) return '$TBC';
+  if (n >= 1000000) return '$' + (n / 1000000).toFixed(1) + 'M';
+  if (n >= 1000) return '$' + Math.round(n / 1000) + 'K';
+  return '$' + n.toLocaleString();
+}
+
+function esc(s) { if (!s) return ''; const d = document.createElement('span'); d.textContent = String(s); return d.innerHTML; }
+
+function phaseStyle(phase) {
+  const c = PHASE_COLORS[phase] || PHASE_COLORS['TBC'];
+  return `background:${c.bg};color:${c.color}`;
+}
+
+// ── Data loading ──
+
+fetch('projects.json').then(r => r.json()).then(data => {
+  ALL_PROJECTS = data.map(p => {
+    const budgetNum = parseBudget(p.fields.art_budget);
+    return { ...p, _budget: budgetNum };
+  });
+  maxBudget = Math.max(...ALL_PROJECTS.map(p => p._budget), 1);
+
+  restoreHashState();
+  buildStats();
+  buildPhasePills();
+  buildDropdowns();
+  applyFiltersToUI();
+  renderTable();
+  bindEvents();
+
+  document.getElementById('lastUpdated').textContent = 'Data: projects.json';
+}).catch(err => {
+  document.getElementById('tableBody').innerHTML =
+    '<tr><td colspan="7" style="text-align:center;padding:40px;color:#c00">Failed to load projects.json: ' + esc(err.message) + '</td></tr>';
+});
+
+// ── Stats ──
+
+function buildStats() {
+  const projects = ALL_PROJECTS;
+  document.getElementById('statTotal').textContent = projects.length;
+
+  const totalBudget = projects.reduce((sum, p) => sum + p._budget, 0);
+  document.getElementById('statBudget').textContent = formatBudget(totalBudget);
+
+  const totalSteps = projects.reduce((sum, p) => sum + (p.next_steps || []).length, 0);
+  document.getElementById('statSteps').textContent = totalSteps;
+
+  const tbcCount = projects.filter(p => p.bfa_phase === 'TBC' || !p.bfa_phase).length;
+  document.getElementById('statTBC').textContent = tbcCount;
+}
+
+// ── Phase pills ──
+
+function buildPhasePills() {
+  const counts = {};
+  ALL_PROJECTS.forEach(p => {
+    const ph = p.bfa_phase || 'TBC';
+    counts[ph] = (counts[ph] || 0) + 1;
+  });
+
+  // Order phases by pipeline stage
+  const order = ['TBC', 'Intake/Scoping', 'EOI/Shortlist', 'Contracting',
+                 'Design development', 'Approvals', 'Fabrication', 'Install', 'Closeout'];
+  const phases = order.filter(ph => counts[ph]);
+  // Add any unlisted phases
+  Object.keys(counts).forEach(ph => { if (!phases.includes(ph)) phases.push(ph); });
+
+  const container = document.getElementById('phasePills');
+  phases.forEach(ph => {
+    const pill = document.createElement('span');
+    pill.className = 'phase-pill';
+    pill.dataset.phase = ph;
+    pill.style.cssText = phaseStyle(ph);
+    pill.innerHTML = esc(ph) + ' <span class="pill-count">' + counts[ph] + '</span>';
+    pill.addEventListener('click', () => {
+      if (filters.phase === ph) {
+        filters.phase = null;
+        pill.classList.remove('active');
+      } else {
+        container.querySelectorAll('.phase-pill').forEach(p => p.classList.remove('active'));
+        filters.phase = ph;
+        pill.classList.add('active');
+      }
+      renderTable();
+      pushHashState();
+    });
+    container.appendChild(pill);
+  });
+}
+
+// ── Dropdowns ──
+
+function buildDropdowns() {
+  const teams = {};
+  const cities = {};
+  ALL_PROJECTS.forEach(p => {
+    const t = p.fields.owner_team || 'TBC';
+    teams[t] = (teams[t] || 0) + 1;
+    const c = p.fields.city || 'TBC';
+    cities[c] = (cities[c] || 0) + 1;
+  });
+
+  const teamSel = document.getElementById('teamFilter');
+  Object.entries(teams).sort((a,b) => b[1] - a[1]).forEach(([t, n]) => {
+    const opt = document.createElement('option');
+    opt.value = t;
+    opt.textContent = t + ' (' + n + ')';
+    teamSel.appendChild(opt);
+  });
+
+  const citySel = document.getElementById('cityFilter');
+  Object.entries(cities).sort((a,b) => b[1] - a[1]).forEach(([c, n]) => {
+    const opt = document.createElement('option');
+    opt.value = c;
+    opt.textContent = c + ' (' + n + ')';
+    citySel.appendChild(opt);
+  });
+}
+
+// ── Filtering + sorting ──
+
+function getFiltered() {
+  return ALL_PROJECTS.filter(p => {
+    if (filters.phase && (p.bfa_phase || 'TBC') !== filters.phase) return false;
+    if (filters.team && (p.fields.owner_team || 'TBC') !== filters.team) return false;
+    if (filters.city && (p.fields.city || 'TBC') !== filters.city) return false;
+    if (filters.search) {
+      const q = filters.search.toLowerCase();
+      const hay = [
+        p.fields.client, p.fields.project_name, p.fields.city,
+        p.contacts, p.artists, p.fields.owner_team,
+      ].filter(Boolean).join(' ').toLowerCase();
+      if (!hay.includes(q)) return false;
+    }
+    return true;
+  });
+}
+
+function getSorted(projects) {
+  const k = currentSort.key;
+  const dir = currentSort.dir === 'asc' ? 1 : -1;
+  return [...projects].sort((a, b) => {
+    let va, vb;
+    switch (k) {
+      case 'owner_team': va = a.fields.owner_team || ''; vb = b.fields.owner_team || ''; break;
+      case 'client': va = a.fields.client || ''; vb = b.fields.client || ''; break;
+      case 'project_name': va = a.fields.project_name || ''; vb = b.fields.project_name || ''; break;
+      case 'city': va = a.fields.city || ''; vb = b.fields.city || ''; break;
+      case 'phase': va = a.bfa_phase || 'TBC'; vb = b.bfa_phase || 'TBC'; break;
+      case 'budget': return (a._budget - b._budget) * dir;
+      case 'install': va = a.fields.install_date || ''; vb = b.fields.install_date || ''; break;
+      default: va = ''; vb = '';
+    }
+    return va.localeCompare(vb) * dir;
+  });
+}
+
+// ── Render table ──
+
+function renderTable() {
+  const filtered = getFiltered();
+  const sorted = getSorted(filtered);
+
+  const tbody = document.getElementById('tableBody');
+  tbody.innerHTML = '';
+  expandedUid = null;
+
+  sorted.forEach(p => {
+    const tr = document.createElement('tr');
+    tr.className = 'project-row';
+    tr.dataset.uid = p.uid;
+
+    const budgetPct = maxBudget > 0 ? Math.round((p._budget / maxBudget) * 100) : 0;
+    const budgetStr = p.fields.art_budget || '$TBC';
+    const budgetBar = p._budget > 0
+      ? `<div class="budget-bar-wrap"><span>${esc(budgetStr)}</span><div class="budget-bar" style="width:${budgetPct}px"></div></div>`
+      : `<span style="color:#999">${esc(budgetStr)}</span>`;
+
+    tr.innerHTML =
+      `<td class="team-cell">${esc(p.fields.owner_team)}</td>` +
+      `<td class="client-cell">${esc(p.fields.client)}</td>` +
+      `<td>${esc(p.fields.project_name)}</td>` +
+      `<td class="city-cell">${esc(p.fields.city)}</td>` +
+      `<td><span class="phase-badge" style="${phaseStyle(p.bfa_phase || 'TBC')}">${esc(p.bfa_phase || 'TBC')}</span></td>` +
+      `<td class="budget-cell">${budgetBar}</td>` +
+      `<td class="install-cell">${esc(p.fields.install_date || 'TBC')}</td>`;
+
+    tr.addEventListener('click', () => toggleDetail(p, tr));
+    tbody.appendChild(tr);
+  });
+
+  document.getElementById('shownCount').textContent =
+    sorted.length + ' of ' + ALL_PROJECTS.length + ' projects';
+  document.getElementById('projectCount').textContent = '(' + ALL_PROJECTS.length + ')';
+
+  // Update sort arrows
+  document.querySelectorAll('th[data-sort]').forEach(th => {
+    const arrow = th.querySelector('.sort-arrow');
+    if (th.dataset.sort === currentSort.key) {
+      arrow.textContent = currentSort.dir === 'asc' ? '▲' : '▼';
+    } else {
+      arrow.textContent = '';
+    }
+  });
+}
+
+// ── Detail expansion ──
+
+function toggleDetail(p, tr) {
+  const existing = tr.nextElementSibling;
+  if (existing && existing.classList.contains('detail-row')) {
+    existing.remove();
+    tr.classList.remove('expanded');
+    expandedUid = null;
+    return;
+  }
+  // Collapse any other open detail
+  document.querySelectorAll('.detail-row').forEach(r => r.remove());
+  document.querySelectorAll('.project-row.expanded').forEach(r => r.classList.remove('expanded'));
+
+  tr.classList.add('expanded');
+  expandedUid = p.uid;
+
+  const detailTr = document.createElement('tr');
+  detailTr.className = 'detail-row';
+  const td = document.createElement('td');
+  td.colSpan = 7;
+
+  let contactsHtml = '';
+  if (p.contacts && p.contacts !== 'TBC') {
+    const lines = p.contacts.split('\n').filter(l => l.trim());
+    contactsHtml = `<div class="detail-section"><h4>Contacts</h4>${lines.map(l => '<p>' + esc(l) + '</p>').join('')}</div>`;
+  }
+
+  let artistsHtml = '';
+  if (p.artists && p.artists !== 'TBC' && p.artists !== 'TBD') {
+    const lines = p.artists.split('\n').filter(l => l.trim());
+    artistsHtml = `<div class="detail-section"><h4>Artists</h4>${lines.map(l => '<p>' + esc(l) + '</p>').join('')}</div>`;
+  }
+
+  let stepsHtml = '';
+  if (p.next_steps && p.next_steps.length) {
+    const items = p.next_steps.map(s => {
+      const dateTag = s.date_display && s.date_display !== 'TBC'
+        ? `<span class="step-date">(${esc(s.date_display)})</span>` : '';
+      return `<li>${esc(s.text)} ${dateTag}</li>`;
+    }).join('');
+    stepsHtml = `<div class="detail-section"><h4>Next Steps</h4><ul>${items}</ul></div>`;
+  }
+
+  let artworkHtml = '';
+  const artSec = p.sections && p.sections.artwork_title;
+  if (artSec && artSec.text && artSec.text.trim() && artSec.text.trim() !== 'TBC') {
+    artworkHtml = `<div class="detail-section"><h4>Artwork</h4><p>${esc(artSec.text)}</p></div>`;
+  }
+
+  let budgetDetailHtml = '';
+  const f = p.fields;
+  if (f.total_budget !== '$TBC' || f.bfa_fee !== '$TBC') {
+    const parts = [];
+    if (f.art_budget && f.art_budget !== '$TBC') parts.push('Art: ' + f.art_budget);
+    if (f.total_budget && f.total_budget !== '$TBC') parts.push('Total: ' + f.total_budget);
+    if (f.bfa_fee && f.bfa_fee !== '$TBC') parts.push('BFA Fee: ' + f.bfa_fee);
+    if (parts.length) {
+      budgetDetailHtml = `<div class="detail-section"><h4>Budget</h4><p>${esc(parts.join('  |  '))}</p></div>`;
+    }
+  }
+
+  const anchorLink = `<div class="detail-section"><a class="detail-link" href="index.html#p-${p.slug}" target="_blank">View in full document &rarr;</a></div>`;
+
+  td.innerHTML = `<div class="detail-card">${contactsHtml}${artistsHtml}${stepsHtml}${artworkHtml}${budgetDetailHtml}${anchorLink}</div>`;
+  detailTr.appendChild(td);
+  tr.after(detailTr);
+}
+
+// ── URL hash state ──
+
+function pushHashState() {
+  const params = new URLSearchParams();
+  if (filters.phase) params.set('phase', filters.phase);
+  if (filters.team) params.set('team', filters.team);
+  if (filters.city) params.set('city', filters.city);
+  if (filters.search) params.set('q', filters.search);
+  if (currentSort.key !== 'client' || currentSort.dir !== 'asc') {
+    params.set('sort', currentSort.key);
+    params.set('dir', currentSort.dir);
+  }
+  const hash = params.toString();
+  history.replaceState(null, '', hash ? '#' + hash : location.pathname);
+}
+
+function restoreHashState() {
+  const hash = location.hash.slice(1);
+  if (!hash) return;
+  const params = new URLSearchParams(hash);
+  if (params.has('phase')) filters.phase = params.get('phase');
+  if (params.has('team')) filters.team = params.get('team');
+  if (params.has('city')) filters.city = params.get('city');
+  if (params.has('q')) filters.search = params.get('q');
+  if (params.has('sort')) currentSort.key = params.get('sort');
+  if (params.has('dir')) currentSort.dir = params.get('dir');
+}
+
+function applyFiltersToUI() {
+  document.getElementById('searchBox').value = filters.search;
+  document.getElementById('teamFilter').value = filters.team;
+  document.getElementById('cityFilter').value = filters.city;
+  if (filters.phase) {
+    document.querySelectorAll('.phase-pill').forEach(pill => {
+      pill.classList.toggle('active', pill.dataset.phase === filters.phase);
+    });
+  }
+}
+
+// ── Event bindings ──
+
+function bindEvents() {
+  // Search
+  let searchTimeout;
+  document.getElementById('searchBox').addEventListener('input', function() {
+    clearTimeout(searchTimeout);
+    searchTimeout = setTimeout(() => {
+      filters.search = this.value.trim();
+      renderTable();
+      pushHashState();
+    }, 200);
+  });
+
+  // Team filter
+  document.getElementById('teamFilter').addEventListener('change', function() {
+    filters.team = this.value;
+    renderTable();
+    pushHashState();
+  });
+
+  // City filter
+  document.getElementById('cityFilter').addEventListener('change', function() {
+    filters.city = this.value;
+    renderTable();
+    pushHashState();
+  });
+
+  // Clear all
+  document.getElementById('clearFilters').addEventListener('click', () => {
+    filters = { phase: null, team: '', city: '', search: '' };
+    currentSort = { key: 'client', dir: 'asc' };
+    document.getElementById('searchBox').value = '';
+    document.getElementById('teamFilter').value = '';
+    document.getElementById('cityFilter').value = '';
+    document.querySelectorAll('.phase-pill').forEach(p => p.classList.remove('active'));
+    renderTable();
+    pushHashState();
+  });
+
+  // Column sort
+  document.querySelectorAll('th[data-sort]').forEach(th => {
+    th.addEventListener('click', () => {
+      const key = th.dataset.sort;
+      if (currentSort.key === key) {
+        currentSort.dir = currentSort.dir === 'asc' ? 'desc' : 'asc';
+      } else {
+        currentSort.key = key;
+        currentSort.dir = 'asc';
+      }
+      renderTable();
+      pushHashState();
+    });
+  });
+
+  // Handle back/forward navigation
+  window.addEventListener('hashchange', () => {
+    filters = { phase: null, team: '', city: '', search: '' };
+    currentSort = { key: 'client', dir: 'asc' };
+    restoreHashState();
+    applyFiltersToUI();
+    renderTable();
+  });
+}
+</script>
+</body>
+</html>

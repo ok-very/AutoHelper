@@ -1,0 +1,28 @@
+[tools]
+python = "3.13"
+node = "24"
+
+[env]
+VIRTUAL_ENV = "{{config_root}}/.venv"
+_.path = ["{{config_root}}/.venv/Scripts"]
+_.file = [".env", ".env.agent"]
+
+[tasks.dev]
+description = "Start AutoHelper dev server"
+run = "python -m uvicorn autohelper.app:build_app --host 127.0.0.1 --port 8100 --reload --factory"
+
+[tasks.venv]
+description = "Create/update venv with editable install"
+run = "python -m venv .venv && .venv/Scripts/pip install -e ."
+
+[tasks.validate]
+description = "Test ClickUp connection"
+run = "curl -s http://localhost:8100/clickup/validate"
+
+[tasks."ui:build"]
+description = "Build UI into autohelper/gui/artists-dist"
+run = "pnpm --filter autohelper-ui build"
+
+[tasks."ui:dev"]
+description = "Watch UI and rebuild on changes"
+run = "pnpm --filter autohelper-ui dev"

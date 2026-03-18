@@ -1,0 +1,17 @@
+{
+  "city_id": "vancouver",
+  "city_name": "City of Vancouver",
+  "policy_version": "current",
+  "budget_rules": {
+    "contribution_rate": 0.01,
+    "cost_basis": "construction"
+  },
+  "thresholds": {},
+  "constraints": {},
+  "condition_defaults": {
+    "city_inspection_required": false,
+    "civic_contribution": true
+  },
+  "task_overrides": [],
+  "task_removals": []
+}

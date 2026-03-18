@@ -1,0 +1,1407 @@
+{
+  "version": "1.1",
+  "description": "BFA project template — 102 tasks across 11 stages with dependency graph",
+  "clickup": {
+    "workspace_id": "9014240887",
+    "space_id": "90140886432",
+    "folder_id": "90144269771",
+    "list_id": "901414366813"
+  },
+  "phase_field_id": "4abc75c1-c264-43c5-87a9-f116ad09e0fa",
+  "phase_options": {
+    "1": "eb7af0e2-174d-40e3-835e-c46cf00cb90f",
+    "2": "54f30092-2365-494d-8527-694b453872d9",
+    "3": "d915bc10-5ee9-43df-b8fd-52396d1a6674",
+    "4": "d915bc10-5ee9-43df-b8fd-52396d1a6674",
+    "5": "27ee5137-9f71-480d-a13a-cdbc7ebe0a0e",
+    "6": "7f3a0b97-425a-4ca3-a05c-3f3b35ce590e",
+    "7": "3e54fd5c-5243-49cb-9c76-a1ccee4a0d51",
+    "8": "9a54c988-2f31-4e55-a9ba-bdb246cc67b3",
+    "9": "3a3f7c7f-d949-4fc9-afd8-580fbffe4f64",
+    "10": "f040f8c7-f4c3-4b75-89f1-69273bef15df",
+    "11": "30c99a30-8328-4ee4-9181-01b61a80defd"
+  },
+  "fab_100_option": "b64cea4a-43a6-4e17-b1db-050d55e86b74",
+  "stages": [
+    {
+      "number": 1,
+      "name": "PROJECT INITIATION"
+    },
+    {
+      "number": 2,
+      "name": "PRELIMINARY PUBLIC ART PLAN (PPAP)"
+    },
+    {
+      "number": 3,
+      "name": "DETAILED PUBLIC ART PLAN (DPAP)"
+    },
+    {
+      "number": 4,
+      "name": "COMMUNITY ENGAGEMENT  (if applicable)"
+    },
+    {
+      "number": 5,
+      "name": "ARTIST LONGLIST & SELECTION PANEL MEETING #1"
+    },
+    {
+      "number": 6,
+      "name": "ARTIST CONCEPT PROPOSALS & SELECTION PANEL MEETING #2"
+    },
+    {
+      "number": 7,
+      "name": "ARTIST CONTRACT"
+    },
+    {
+      "number": 8,
+      "name": "DETAILED DESIGN"
+    },
+    {
+      "number": 9,
+      "name": "FABRICATION  (50% → 100%)"
+    },
+    {
+      "number": 10,
+      "name": "INSTALLATION"
+    },
+    {
+      "number": 11,
+      "name": "CLOSE-OUT  (Plaque · Legal · Photography · Final Report)"
+    }
+  ],
+  "tasks": [
+    {
+      "temp_id": "dry-1-0",
+      "name": "Project Introduction Meeting (client)",
+      "stage": 1,
+      "email_template_key": "01.1",
+      "is_milestone": false,
+      "parent_temp_id": null,
+      "depends_on": [],
+      "condition": null
+    },
+    {
+      "temp_id": "dry-1-1",
+      "name": "Submit BFA Fee Proposal to Developer",
+      "stage": 1,
+      "email_template_key": "01.2",
+      "is_milestone": false,
+      "parent_temp_id": null,
+      "depends_on": [
+        "dry-1-0"
+      ],
+      "condition": null
+    },
+    {
+      "temp_id": "dry-1-2",
+      "name": "Signed Fee Proposal Received",
+      "stage": 1,
+      "email_template_key": null,
+      "is_milestone": true,
+      "parent_temp_id": null,
+      "depends_on": [
+        "dry-1-1"
+      ],
+      "condition": null
+    },
+    {
+      "temp_id": "dry-1-3",
+      "name": "Create Project Folder & Contacts",
+      "stage": 1,
+      "email_template_key": null,
+      "is_milestone": false,
+      "parent_temp_id": null,
+      "depends_on": [
+        "dry-1-2"
+      ],
+      "condition": null
+    },
+    {
+      "temp_id": "dry-1-4",
+      "name": "Set Up Accounting Folder",
+      "stage": 1,
+      "email_template_key": null,
+      "is_milestone": false,
+      "parent_temp_id": null,
+      "depends_on": [
+        "dry-1-2"
+      ],
+      "condition": null
+    },
+    {
+      "temp_id": "dry-1-5",
+      "name": "Draft & Submit Development Checklist",
+      "stage": 1,
+      "email_template_key": "01.3",
+      "is_milestone": false,
+      "parent_temp_id": null,
+      "depends_on": [
+        "dry-1-2"
+      ],
+      "condition": null
+    },
+    {
+      "temp_id": "dry-1-6",
+      "name": "Establish Project Timeline",
+      "stage": 1,
+      "email_template_key": null,
+      "is_milestone": false,
+      "parent_temp_id": null,
+      "depends_on": [
+        "dry-1-2"
+      ],
+      "condition": null
+    },
+    {
+      "temp_id": "dry-2-0",
+      "name": "Client Project Kickoff Meeting",
+      "stage": 2,
+      "email_template_key": "02.1",
+      "is_milestone": false,
+      "parent_temp_id": null,
+      "depends_on": [
+        "dry-1-2"
+      ],
+      "condition": null
+    },
+    {
+      "temp_id": "dry-2-1",
+      "name": "City Kickoff Meeting",
+      "stage": 2,
+      "email_template_key": "01.4",
+      "is_milestone": false,
+      "parent_temp_id": null,
+      "depends_on": [
+        "dry-1-2"
+      ],
+      "condition": null
+    },
+    {
+      "temp_id": "dry-2-2",
+      "name": "Research PPAP",
+      "stage": 2,
+      "email_template_key": null,
+      "is_milestone": false,
+      "parent_temp_id": null,
+      "depends_on": [
+        "dry-2-0",
+        "dry-2-1"
+      ],
+      "condition": null
+    },
+    {
+      "temp_id": "dry-2-3",
+      "name": "Write & Design PPAP",
+      "stage": 2,
+      "email_template_key": null,
+      "is_milestone": false,
+      "parent_temp_id": null,
+      "depends_on": [
+        "dry-2-2"
+      ],
+      "condition": null
+    },
+    {
+      "temp_id": "dry-2-4",
+      "name": "Submit PPAP to Client for Review",
+      "stage": 2,
+      "email_template_key": "02.2",
+      "is_milestone": false,
+      "parent_temp_id": null,
+      "depends_on": [
+        "dry-2-3"
+      ],
+      "condition": null
+    },
+    {
+      "temp_id": "dry-2-5",
+      "name": "Submit PPAP to City + Confirm PAC Agenda",
+      "stage": 2,
+      "email_template_key": "02.3",
+      "is_milestone": false,
+      "parent_temp_id": null,
+      "depends_on": [
+        "dry-2-4"
+      ],
+      "condition": null
+    },
+    {
+      "temp_id": "dry-2-6",
+      "name": "Request Developer Availability for PAC",
+      "stage": 2,
+      "email_template_key": "02.4",
+      "is_milestone": false,
+      "parent_temp_id": null,
+      "depends_on": [
+        "dry-2-5"
+      ],
+      "condition": null
+    },
+    {
+      "temp_id": "dry-2-7",
+      "name": "Send PAC Agenda + Confirm Attendees",
+      "stage": 2,
+      "email_template_key": "02.5",
+      "is_milestone": false,
+      "parent_temp_id": null,
+      "depends_on": [
+        "dry-2-6"
+      ],
+      "condition": null
+    },
+    {
+      "temp_id": "dry-2-8",
+      "name": "PAC Meeting Details to Developer",
+      "stage": 2,
+      "email_template_key": "02.7",
+      "is_milestone": false,
+      "parent_temp_id": null,
+      "depends_on": [
+        "dry-2-7"
+      ],
+      "condition": null
+    },
+    {
+      "temp_id": "dry-2-9",
+      "name": "Present PPAP at PAC Meeting",
+      "stage": 2,
+      "email_template_key": null,
+      "is_milestone": false,
+      "parent_temp_id": null,
+      "depends_on": [
+        "dry-2-8"
+      ],
+      "condition": null
+    },
+    {
+      "temp_id": "dry-2-10",
+      "name": "Approved PPAP",
+      "stage": 2,
+      "email_template_key": null,
+      "is_milestone": true,
+      "parent_temp_id": null,
+      "depends_on": [
+        "dry-2-9"
+      ],
+      "condition": null
+    },
+    {
+      "temp_id": "dry-2-11",
+      "name": "PPAP Follow-Up + Request Files for DPAP",
+      "stage": 2,
+      "email_template_key": "02.8",
+      "is_milestone": false,
+      "parent_temp_id": null,
+      "depends_on": [
+        "dry-2-10"
+      ],
+      "condition": null
+    },
+    {
+      "temp_id": "dry-2-12",
+      "name": "Submit BFA Invoice — PPAP",
+      "stage": 2,
+      "email_template_key": "02.9",
+      "is_milestone": false,
+      "parent_temp_id": null,
+      "depends_on": [
+        "dry-2-10"
+      ],
+      "condition": null
+    },
+    {
+      "temp_id": "dry-3-0",
+      "name": "Develop DPAP",
+      "stage": 3,
+      "email_template_key": null,
+      "is_milestone": false,
+      "parent_temp_id": null,
+      "depends_on": [
+        "dry-2-10",
+        "dry-2-11"
+      ],
+      "condition": null
+    },
+    {
+      "temp_id": "dry-3-1",
+      "name": "Submit DPAP to Developer for Review",
+      "stage": 3,
+      "email_template_key": "03.1",
+      "is_milestone": false,
+      "parent_temp_id": null,
+      "depends_on": [
+        "dry-3-0"
+      ],
+      "condition": null
+    },
+    {
+      "temp_id": "dry-3-2",
+      "name": "Submit DPAP to City + City Follow-Up",
+      "stage": 3,
+      "email_template_key": "03.2",
+      "is_milestone": false,
+      "parent_temp_id": null,
+      "depends_on": [
+        "dry-3-1"
+      ],
+      "condition": null
+    },
+    {
+      "temp_id": "dry-3-3",
+      "name": "Confirm Developer Availability for PAC",
+      "stage": 3,
+      "email_template_key": "03.3",
+      "is_milestone": false,
+      "parent_temp_id": null,
+      "depends_on": [
+        "dry-3-2"
+      ],
+      "condition": null
+    },
+    {
+      "temp_id": "dry-3-4",
+      "name": "Send PAC Agenda + Confirm Attendees",
+      "stage": 3,
+      "email_template_key": "03.4",
+      "is_milestone": false,
+      "parent_temp_id": null,
+      "depends_on": [
+        "dry-3-3"
+      ],
+      "condition": null
+    },
+    {
+      "temp_id": "dry-3-5",
+      "name": "PAC Meeting Details to Developer",
+      "stage": 3,
+      "email_template_key": "03.6",
+      "is_milestone": false,
+      "parent_temp_id": null,
+      "depends_on": [
+        "dry-3-4"
+      ],
+      "condition": null
+    },
+    {
+      "temp_id": "dry-3-6",
+      "name": "Present DPAP at PAC Meeting",
+      "stage": 3,
+      "email_template_key": null,
+      "is_milestone": false,
+      "parent_temp_id": null,
+      "depends_on": [
+        "dry-3-5"
+      ],
+      "condition": null
+    },
+    {
+      "temp_id": "dry-3-7",
+      "name": "DPAP Presentation Follow-Up",
+      "stage": 3,
+      "email_template_key": "03.7",
+      "is_milestone": false,
+      "parent_temp_id": null,
+      "depends_on": [
+        "dry-3-6"
+      ],
+      "condition": null
+    },
+    {
+      "temp_id": "dry-3-8",
+      "name": "Approved DPAP",
+      "stage": 3,
+      "email_template_key": null,
+      "is_milestone": true,
+      "parent_temp_id": null,
+      "depends_on": [
+        "dry-3-7"
+      ],
+      "condition": null
+    },
+    {
+      "temp_id": "dry-3-9",
+      "name": "10% Civic Program Contribution Reminder",
+      "stage": 3,
+      "email_template_key": "03.8",
+      "is_milestone": false,
+      "parent_temp_id": null,
+      "depends_on": [
+        "dry-3-8"
+      ],
+      "condition": "civic_contribution"
+    },
+    {
+      "temp_id": "dry-3-10",
+      "name": "City Follow-Up: DPAP Comments & Approval",
+      "stage": 3,
+      "email_template_key": "03.9",
+      "is_milestone": false,
+      "parent_temp_id": null,
+      "depends_on": [
+        "dry-3-6"
+      ],
+      "condition": null
+    },
+    {
+      "temp_id": "dry-3-11",
+      "name": "Submit BFA Invoice — DPAP",
+      "stage": 3,
+      "email_template_key": "03.10",
+      "is_milestone": false,
+      "parent_temp_id": null,
+      "depends_on": [
+        "dry-3-8"
+      ],
+      "condition": null
+    },
+    {
+      "temp_id": "dry-4-0",
+      "name": "Initiate Community Engagement Strategy",
+      "stage": 4,
+      "email_template_key": null,
+      "is_milestone": false,
+      "parent_temp_id": null,
+      "depends_on": [
+        "dry-3-8"
+      ],
+      "condition": "community_engagement"
+    },
+    {
+      "temp_id": "dry-4-1",
+      "name": "Initiate Indigenous Engagement Strategy",
+      "stage": 4,
+      "email_template_key": null,
+      "is_milestone": false,
+      "parent_temp_id": null,
+      "depends_on": [
+        "dry-3-8"
+      ],
+      "condition": "indigenous_engagement"
+    },
+    {
+      "temp_id": "dry-5-0",
+      "name": "Prepare Terms of Reference",
+      "stage": 5,
+      "email_template_key": null,
+      "is_milestone": false,
+      "parent_temp_id": null,
+      "depends_on": [
+        "dry-3-8"
+      ],
+      "condition": null
+    },
+    {
+      "temp_id": "dry-5-1",
+      "name": "Provide Project Update to Developer",
+      "stage": 5,
+      "email_template_key": "04.1",
+      "is_milestone": false,
+      "parent_temp_id": null,
+      "depends_on": [
+        "dry-3-8"
+      ],
+      "condition": null
+    },
+    {
+      "temp_id": "dry-5-2",
+      "name": "Invite Selection Panel Members",
+      "stage": 5,
+      "email_template_key": "04.2",
+      "is_milestone": false,
+      "parent_temp_id": null,
+      "depends_on": [
+        "dry-5-0"
+      ],
+      "condition": null
+    },
+    {
+      "temp_id": "dry-5-3",
+      "name": "Invite Community Advisory Members",
+      "stage": 5,
+      "email_template_key": "04.3",
+      "is_milestone": false,
+      "parent_temp_id": null,
+      "depends_on": [
+        "dry-5-0"
+      ],
+      "condition": null
+    },
+    {
+      "temp_id": "dry-5-4",
+      "name": "Develop Artist Longlist",
+      "stage": 5,
+      "email_template_key": null,
+      "is_milestone": false,
+      "parent_temp_id": null,
+      "depends_on": [
+        "dry-5-0"
+      ],
+      "condition": null
+    },
+    {
+      "temp_id": "dry-5-5",
+      "name": "Submit Longlist to Developer for Review",
+      "stage": 5,
+      "email_template_key": "04.5",
+      "is_milestone": false,
+      "parent_temp_id": null,
+      "depends_on": [
+        "dry-5-4"
+      ],
+      "condition": null
+    },
+    {
+      "temp_id": "dry-5-6",
+      "name": "Coordinate SP #1 Meeting",
+      "stage": 5,
+      "email_template_key": null,
+      "is_milestone": false,
+      "parent_temp_id": null,
+      "depends_on": [
+        "dry-5-2",
+        "dry-5-3",
+        "dry-5-5"
+      ],
+      "condition": null
+    },
+    {
+      "temp_id": "dry-5-7",
+      "name": "Confirm meeting with developer",
+      "stage": 5,
+      "email_template_key": "04.6",
+      "is_milestone": false,
+      "parent_temp_id": "dry-5-6",
+      "depends_on": [
+        "dry-5-6"
+      ],
+      "condition": null
+    },
+    {
+      "temp_id": "dry-5-8",
+      "name": "Confirm with SP members",
+      "stage": 5,
+      "email_template_key": "04.7",
+      "is_milestone": false,
+      "parent_temp_id": "dry-5-6",
+      "depends_on": [
+        "dry-5-6"
+      ],
+      "condition": null
+    },
+    {
+      "temp_id": "dry-5-9",
+      "name": "Confirm with community advisory",
+      "stage": 5,
+      "email_template_key": "04.7",
+      "is_milestone": false,
+      "parent_temp_id": "dry-5-6",
+      "depends_on": [
+        "dry-5-6"
+      ],
+      "condition": null
+    },
+    {
+      "temp_id": "dry-5-10",
+      "name": "Submit Longlist to SP prior to meeting",
+      "stage": 5,
+      "email_template_key": "04.8",
+      "is_milestone": false,
+      "parent_temp_id": null,
+      "depends_on": [
+        "dry-5-6"
+      ],
+      "condition": null
+    },
+    {
+      "temp_id": "dry-5-11",
+      "name": "SP #1 Meeting & Follow-Up",
+      "stage": 5,
+      "email_template_key": "04.9",
+      "is_milestone": false,
+      "parent_temp_id": null,
+      "depends_on": [
+        "dry-5-10",
+        "dry-5-7",
+        "dry-5-8",
+        "dry-5-9"
+      ],
+      "condition": null
+    },
+    {
+      "temp_id": "dry-5-12",
+      "name": "Invite Shortlisted Artists",
+      "stage": 5,
+      "email_template_key": "04.10",
+      "is_milestone": false,
+      "parent_temp_id": null,
+      "depends_on": [
+        "dry-5-11"
+      ],
+      "condition": null
+    },
+    {
+      "temp_id": "dry-5-13",
+      "name": "Artist Longlist Meeting Complete",
+      "stage": 5,
+      "email_template_key": null,
+      "is_milestone": true,
+      "parent_temp_id": null,
+      "depends_on": [
+        "dry-5-12"
+      ],
+      "condition": null
+    },
+    {
+      "temp_id": "dry-6-0",
+      "name": "Coordinate Artist Orientation Meeting",
+      "stage": 6,
+      "email_template_key": "05.1",
+      "is_milestone": false,
+      "parent_temp_id": null,
+      "depends_on": [
+        "dry-5-13"
+      ],
+      "condition": null
+    },
+    {
+      "temp_id": "dry-6-1",
+      "name": "Confirm with artists (+ project files)",
+      "stage": 6,
+      "email_template_key": "05.3",
+      "is_milestone": false,
+      "parent_temp_id": "dry-6-0",
+      "depends_on": [
+        "dry-6-0"
+      ],
+      "condition": null
+    },
+    {
+      "temp_id": "dry-6-2",
+      "name": "Confirm with community advisory",
+      "stage": 6,
+      "email_template_key": "05.4",
+      "is_milestone": false,
+      "parent_temp_id": "dry-6-0",
+      "depends_on": [
+        "dry-6-0"
+      ],
+      "condition": null
+    },
+    {
+      "temp_id": "dry-6-3",
+      "name": "Group reminder + follow-up",
+      "stage": 6,
+      "email_template_key": "05.5",
+      "is_milestone": false,
+      "parent_temp_id": "dry-6-0",
+      "depends_on": [
+        "dry-6-1",
+        "dry-6-2"
+      ],
+      "condition": null
+    },
+    {
+      "temp_id": "dry-6-4",
+      "name": "Request Artist Honorarium Invoices",
+      "stage": 6,
+      "email_template_key": "06.6",
+      "is_milestone": false,
+      "parent_temp_id": null,
+      "depends_on": [
+        "dry-6-0"
+      ],
+      "condition": null
+    },
+    {
+      "temp_id": "dry-6-5",
+      "name": "Request SP Honorarium Invoices + Submit to Developer",
+      "stage": 6,
+      "email_template_key": "06.7",
+      "is_milestone": false,
+      "parent_temp_id": null,
+      "depends_on": [
+        "dry-5-13"
+      ],
+      "condition": null
+    },
+    {
+      "temp_id": "dry-6-6",
+      "name": "Coordinate SP #2 Meeting",
+      "stage": 6,
+      "email_template_key": null,
+      "is_milestone": false,
+      "parent_temp_id": null,
+      "depends_on": [
+        "dry-6-0"
+      ],
+      "condition": null
+    },
+    {
+      "temp_id": "dry-6-7",
+      "name": "Confirm with developer",
+      "stage": 6,
+      "email_template_key": "06.1",
+      "is_milestone": false,
+      "parent_temp_id": "dry-6-6",
+      "depends_on": [
+        "dry-6-6"
+      ],
+      "condition": null
+    },
+    {
+      "temp_id": "dry-6-8",
+      "name": "Confirm with SP members",
+      "stage": 6,
+      "email_template_key": "06.2",
+      "is_milestone": false,
+      "parent_temp_id": "dry-6-6",
+      "depends_on": [
+        "dry-6-6"
+      ],
+      "condition": null
+    },
+    {
+      "temp_id": "dry-6-9",
+      "name": "Confirm with community advisory",
+      "stage": 6,
+      "email_template_key": "06.4",
+      "is_milestone": false,
+      "parent_temp_id": "dry-6-6",
+      "depends_on": [
+        "dry-6-6"
+      ],
+      "condition": null
+    },
+    {
+      "temp_id": "dry-6-10",
+      "name": "Confirm presentation times with artists",
+      "stage": 6,
+      "email_template_key": "06.3",
+      "is_milestone": false,
+      "parent_temp_id": "dry-6-6",
+      "depends_on": [
+        "dry-6-6"
+      ],
+      "condition": null
+    },
+    {
+      "temp_id": "dry-6-11",
+      "name": "Submit Concept Proposals to Developer + SP",
+      "stage": 6,
+      "email_template_key": "06.11",
+      "is_milestone": false,
+      "parent_temp_id": null,
+      "depends_on": [
+        "dry-6-6"
+      ],
+      "condition": null
+    },
+    {
+      "temp_id": "dry-6-12",
+      "name": "SP #2 Meeting & Post-Meeting Follow-Up",
+      "stage": 6,
+      "email_template_key": "06.12",
+      "is_milestone": false,
+      "parent_temp_id": null,
+      "depends_on": [
+        "dry-6-11",
+        "dry-6-7",
+        "dry-6-8",
+        "dry-6-9",
+        "dry-6-10"
+      ],
+      "condition": null
+    },
+    {
+      "temp_id": "dry-6-13",
+      "name": "Notify Successful Artist",
+      "stage": 6,
+      "email_template_key": "06.14",
+      "is_milestone": false,
+      "parent_temp_id": null,
+      "depends_on": [
+        "dry-6-12"
+      ],
+      "condition": null
+    },
+    {
+      "temp_id": "dry-6-14",
+      "name": "Notify Unsuccessful Artists",
+      "stage": 6,
+      "email_template_key": "06.15",
+      "is_milestone": false,
+      "parent_temp_id": null,
+      "depends_on": [
+        "dry-6-12"
+      ],
+      "condition": null
+    },
+    {
+      "temp_id": "dry-6-15",
+      "name": "Final Artist Selected",
+      "stage": 6,
+      "email_template_key": null,
+      "is_milestone": true,
+      "parent_temp_id": null,
+      "depends_on": [
+        "dry-6-13"
+      ],
+      "condition": null
+    },
+    {
+      "temp_id": "dry-6-16",
+      "name": "Submit BFA Invoice — Artist Selection",
+      "stage": 6,
+      "email_template_key": null,
+      "is_milestone": false,
+      "parent_temp_id": null,
+      "depends_on": [
+        "dry-6-15"
+      ],
+      "condition": null
+    },
+    {
+      "temp_id": "dry-7-0",
+      "name": "Artist Kick-Off Meeting",
+      "stage": 7,
+      "email_template_key": "07.1",
+      "is_milestone": false,
+      "parent_temp_id": null,
+      "depends_on": [
+        "dry-6-15"
+      ],
+      "condition": null
+    },
+    {
+      "temp_id": "dry-7-1",
+      "name": "Artist Kick-Off Follow-Up + Meeting Notes",
+      "stage": 7,
+      "email_template_key": "07.3",
+      "is_milestone": false,
+      "parent_temp_id": null,
+      "depends_on": [
+        "dry-7-0"
+      ],
+      "condition": null
+    },
+    {
+      "temp_id": "dry-7-2",
+      "name": "Draft Artist Contract Agreement",
+      "stage": 7,
+      "email_template_key": null,
+      "is_milestone": false,
+      "parent_temp_id": null,
+      "depends_on": [
+        "dry-7-1"
+      ],
+      "condition": null
+    },
+    {
+      "temp_id": "dry-7-3",
+      "name": "Submit Contract to Developer for Review",
+      "stage": 7,
+      "email_template_key": "07.4",
+      "is_milestone": false,
+      "parent_temp_id": null,
+      "depends_on": [
+        "dry-7-2"
+      ],
+      "condition": null
+    },
+    {
+      "temp_id": "dry-7-4",
+      "name": "Submit Contract to Artist for Review",
+      "stage": 7,
+      "email_template_key": "07.5",
+      "is_milestone": false,
+      "parent_temp_id": null,
+      "depends_on": [
+        "dry-7-3"
+      ],
+      "condition": null
+    },
+    {
+      "temp_id": "dry-7-5",
+      "name": "Execute Contract via DocuSign",
+      "stage": 7,
+      "email_template_key": null,
+      "is_milestone": false,
+      "parent_temp_id": null,
+      "depends_on": [
+        "dry-7-4"
+      ],
+      "condition": null
+    },
+    {
+      "temp_id": "dry-7-6",
+      "name": "Executed Artist Contract",
+      "stage": 7,
+      "email_template_key": null,
+      "is_milestone": true,
+      "parent_temp_id": null,
+      "depends_on": [
+        "dry-7-5"
+      ],
+      "condition": null
+    },
+    {
+      "temp_id": "dry-7-7",
+      "name": "Contract Execution — Full Group Notification",
+      "stage": 7,
+      "email_template_key": "07.6",
+      "is_milestone": false,
+      "parent_temp_id": null,
+      "depends_on": [
+        "dry-7-6"
+      ],
+      "condition": null
+    },
+    {
+      "temp_id": "dry-7-8",
+      "name": "Submit Interim Report to City",
+      "stage": 7,
+      "email_template_key": "07.8",
+      "is_milestone": false,
+      "parent_temp_id": null,
+      "depends_on": [
+        "dry-7-6"
+      ],
+      "condition": null
+    },
+    {
+      "temp_id": "dry-7-9",
+      "name": "Artist Invoice — Contract Execution",
+      "stage": 7,
+      "email_template_key": "07.7",
+      "is_milestone": false,
+      "parent_temp_id": null,
+      "depends_on": [
+        "dry-7-6"
+      ],
+      "condition": null
+    },
+    {
+      "temp_id": "dry-7-10",
+      "name": "Submit BFA Invoice — Artist Contract",
+      "stage": 7,
+      "email_template_key": null,
+      "is_milestone": false,
+      "parent_temp_id": null,
+      "depends_on": [
+        "dry-7-6"
+      ],
+      "condition": null
+    },
+    {
+      "temp_id": "dry-8-0",
+      "name": "Detailed Design Kick-Off Meeting",
+      "stage": 8,
+      "email_template_key": "07.9",
+      "is_milestone": false,
+      "parent_temp_id": null,
+      "depends_on": [
+        "dry-7-6"
+      ],
+      "condition": null
+    },
+    {
+      "temp_id": "dry-8-1",
+      "name": "Request Proof of Insurance from Artist",
+      "stage": 8,
+      "email_template_key": null,
+      "is_milestone": false,
+      "parent_temp_id": null,
+      "depends_on": [
+        "dry-8-0"
+      ],
+      "condition": null
+    },
+    {
+      "temp_id": "dry-8-2",
+      "name": "Request Progress Design Drawings",
+      "stage": 8,
+      "email_template_key": null,
+      "is_milestone": false,
+      "parent_temp_id": null,
+      "depends_on": [
+        "dry-8-0"
+      ],
+      "condition": null
+    },
+    {
+      "temp_id": "dry-8-3",
+      "name": "Submit Design Drawings & Stamped Engineering",
+      "stage": 8,
+      "email_template_key": null,
+      "is_milestone": false,
+      "parent_temp_id": null,
+      "depends_on": [
+        "dry-8-2"
+      ],
+      "condition": null
+    },
+    {
+      "temp_id": "dry-8-4",
+      "name": "Artist Invoice — Detailed Design",
+      "stage": 8,
+      "email_template_key": "07.7",
+      "is_milestone": false,
+      "parent_temp_id": null,
+      "depends_on": [
+        "dry-8-3"
+      ],
+      "condition": null
+    },
+    {
+      "temp_id": "dry-9-0",
+      "name": "Confirm Commencement of Artwork Fabrication",
+      "stage": 9,
+      "email_template_key": null,
+      "is_milestone": false,
+      "parent_temp_id": null,
+      "depends_on": [
+        "dry-8-3"
+      ],
+      "condition": null
+    },
+    {
+      "temp_id": "dry-9-1",
+      "name": "Confirm 50% Fabrication + Share Evidence",
+      "stage": 9,
+      "email_template_key": null,
+      "is_milestone": false,
+      "parent_temp_id": null,
+      "depends_on": [
+        "dry-9-0"
+      ],
+      "condition": null
+    },
+    {
+      "temp_id": "dry-9-2",
+      "name": "Artist Invoice — 50% Fabrication",
+      "stage": 9,
+      "email_template_key": "07.7",
+      "is_milestone": false,
+      "parent_temp_id": null,
+      "depends_on": [
+        "dry-9-1"
+      ],
+      "condition": null
+    },
+    {
+      "temp_id": "dry-9-3",
+      "name": "Confirm 100% Fabrication + Share Evidence with Client",
+      "stage": 9,
+      "email_template_key": null,
+      "is_milestone": false,
+      "parent_temp_id": null,
+      "depends_on": [
+        "dry-9-1"
+      ],
+      "condition": null
+    },
+    {
+      "temp_id": "dry-9-4",
+      "name": "Artist Invoice — 100% Fabrication",
+      "stage": 9,
+      "email_template_key": "07.7",
+      "is_milestone": false,
+      "parent_temp_id": null,
+      "depends_on": [
+        "dry-9-3"
+      ],
+      "condition": null
+    },
+    {
+      "temp_id": "dry-9-5",
+      "name": "Submit BFA Invoice — Fabrication",
+      "stage": 9,
+      "email_template_key": null,
+      "is_milestone": false,
+      "parent_temp_id": null,
+      "depends_on": [
+        "dry-9-3"
+      ],
+      "condition": null
+    },
+    {
+      "temp_id": "dry-10-0",
+      "name": "Coordinate Pre-Installation Meeting",
+      "stage": 10,
+      "email_template_key": "08.1",
+      "is_milestone": false,
+      "parent_temp_id": null,
+      "depends_on": [
+        "dry-9-3"
+      ],
+      "condition": null
+    },
+    {
+      "temp_id": "dry-10-1",
+      "name": "Close-Out Timeline Communication",
+      "stage": 10,
+      "email_template_key": "08.2",
+      "is_milestone": false,
+      "parent_temp_id": null,
+      "depends_on": [
+        "dry-10-0"
+      ],
+      "condition": null
+    },
+    {
+      "temp_id": "dry-10-2",
+      "name": "Confirm Artwork Installation Date",
+      "stage": 10,
+      "email_template_key": null,
+      "is_milestone": false,
+      "parent_temp_id": null,
+      "depends_on": [
+        "dry-10-0"
+      ],
+      "condition": null
+    },
+    {
+      "temp_id": "dry-10-3",
+      "name": "Artwork Installed",
+      "stage": 10,
+      "email_template_key": null,
+      "is_milestone": true,
+      "parent_temp_id": null,
+      "depends_on": [
+        "dry-10-2"
+      ],
+      "condition": null
+    },
+    {
+      "temp_id": "dry-10-4",
+      "name": "Submit BFA Invoice — Installation",
+      "stage": 10,
+      "email_template_key": null,
+      "is_milestone": false,
+      "parent_temp_id": null,
+      "depends_on": [
+        "dry-10-3"
+      ],
+      "condition": null
+    },
+    {
+      "temp_id": "dry-10-5",
+      "name": "Artist Invoice — Installation",
+      "stage": 10,
+      "email_template_key": "07.7",
+      "is_milestone": false,
+      "parent_temp_id": null,
+      "depends_on": [
+        "dry-10-3"
+      ],
+      "condition": null
+    },
+    {
+      "temp_id": "dry-11-0",
+      "name": "Prepare Plaque Mock-Up + Submit to Artist / Developer",
+      "stage": 11,
+      "email_template_key": "09.2",
+      "is_milestone": false,
+      "parent_temp_id": null,
+      "depends_on": [
+        "dry-10-3"
+      ],
+      "condition": null
+    },
+    {
+      "temp_id": "dry-11-1",
+      "name": "Submit Plaque to Fabricator + Coordinate Installation",
+      "stage": 11,
+      "email_template_key": null,
+      "is_milestone": false,
+      "parent_temp_id": null,
+      "depends_on": [
+        "dry-11-0"
+      ],
+      "condition": null
+    },
+    {
+      "temp_id": "dry-11-2",
+      "name": "Final Documentation — Request from Artist",
+      "stage": 11,
+      "email_template_key": "09.1",
+      "is_milestone": false,
+      "parent_temp_id": null,
+      "depends_on": [
+        "dry-10-3"
+      ],
+      "condition": null
+    },
+    {
+      "temp_id": "dry-11-3",
+      "name": "Execute Letter of Acceptance (DocuSign)",
+      "stage": 11,
+      "email_template_key": null,
+      "is_milestone": false,
+      "parent_temp_id": null,
+      "depends_on": [
+        "dry-10-3"
+      ],
+      "condition": null
+    },
+    {
+      "temp_id": "dry-11-4",
+      "name": "Execute Transfer of Title (DocuSign)",
+      "stage": 11,
+      "email_template_key": null,
+      "is_milestone": false,
+      "parent_temp_id": null,
+      "depends_on": [
+        "dry-11-3"
+      ],
+      "condition": null
+    },
+    {
+      "temp_id": "dry-11-5",
+      "name": "Execute Statutory Declaration",
+      "stage": 11,
+      "email_template_key": null,
+      "is_milestone": false,
+      "parent_temp_id": null,
+      "depends_on": [
+        "dry-11-4"
+      ],
+      "condition": null
+    },
+    {
+      "temp_id": "dry-11-6",
+      "name": "Request Professional Photography",
+      "stage": 11,
+      "email_template_key": null,
+      "is_milestone": false,
+      "parent_temp_id": null,
+      "depends_on": [
+        "dry-10-3"
+      ],
+      "condition": null
+    },
+    {
+      "temp_id": "dry-11-7",
+      "name": "Receive Artist Statement, Bio & Artwork Specs",
+      "stage": 11,
+      "email_template_key": null,
+      "is_milestone": false,
+      "parent_temp_id": null,
+      "depends_on": [
+        "dry-11-2"
+      ],
+      "condition": null
+    },
+    {
+      "temp_id": "dry-11-8",
+      "name": "Receive Maintenance Manual from Artist",
+      "stage": 11,
+      "email_template_key": null,
+      "is_milestone": false,
+      "parent_temp_id": null,
+      "depends_on": [
+        "dry-11-2"
+      ],
+      "condition": null
+    },
+    {
+      "temp_id": "dry-11-9",
+      "name": "Draft Public Art Report (InDesign)",
+      "stage": 11,
+      "email_template_key": "09.3",
+      "is_milestone": false,
+      "parent_temp_id": null,
+      "depends_on": [
+        "dry-11-6",
+        "dry-11-7",
+        "dry-11-8"
+      ],
+      "condition": null
+    },
+    {
+      "temp_id": "dry-11-10",
+      "name": "Submit Report to Developer for Review",
+      "stage": 11,
+      "email_template_key": null,
+      "is_milestone": false,
+      "parent_temp_id": null,
+      "depends_on": [
+        "dry-11-9"
+      ],
+      "condition": null
+    },
+    {
+      "temp_id": "dry-11-11",
+      "name": "Submit Final Documentation Package to City",
+      "stage": 11,
+      "email_template_key": "09.5",
+      "is_milestone": false,
+      "parent_temp_id": null,
+      "depends_on": [
+        "dry-11-10",
+        "dry-11-5"
+      ],
+      "condition": null
+    },
+    {
+      "temp_id": "dry-11-12",
+      "name": "City Inspection (Burnaby / if applicable)",
+      "stage": 11,
+      "email_template_key": null,
+      "is_milestone": false,
+      "parent_temp_id": null,
+      "depends_on": [
+        "dry-11-11"
+      ],
+      "condition": "city_inspection_required"
+    },
+    {
+      "temp_id": "dry-11-13",
+      "name": "Fill Out City Public Art Registry Form",
+      "stage": 11,
+      "email_template_key": null,
+      "is_milestone": false,
+      "parent_temp_id": null,
+      "depends_on": [
+        "dry-11-11"
+      ],
+      "condition": null
+    },
+    {
+      "temp_id": "dry-11-14",
+      "name": "Final Public Art Report Submitted",
+      "stage": 11,
+      "email_template_key": null,
+      "is_milestone": true,
+      "parent_temp_id": null,
+      "depends_on": [
+        "dry-11-12",
+        "dry-11-13"
+      ],
+      "condition": null
+    },
+    {
+      "temp_id": "dry-11-15",
+      "name": "Artist Invoice — Final",
+      "stage": 11,
+      "email_template_key": "07.7",
+      "is_milestone": false,
+      "parent_temp_id": null,
+      "depends_on": [
+        "dry-11-14"
+      ],
+      "condition": null
+    },
+    {
+      "temp_id": "dry-11-16",
+      "name": "Submit BFA Invoice — Final",
+      "stage": 11,
+      "email_template_key": null,
+      "is_milestone": false,
+      "parent_temp_id": null,
+      "depends_on": [
+        "dry-11-14"
+      ],
+      "condition": null
+    }
+  ]
+}

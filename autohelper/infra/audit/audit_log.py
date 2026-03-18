@@ -6,7 +6,7 @@ Records before/after state for filesystem operations.
 import json
 from collections.abc import Callable
 from functools import wraps
-from typing import Any, TypeVar
+from typing import Any, TypeVar, cast
 
 from autohelper.db import get_db
 from autohelper.shared.ids import generate_audit_id
@@ -20,7 +20,7 @@ T = TypeVar("T")
 
 class AuditLogger:
     """Append-only audit log writer."""
-    
+
     def log(
         self,
         verb: str,
@@ -34,7 +34,7 @@ class AuditLogger:
     ) -> str:
         """
         Write an audit log entry.
-        
+
         Args:
             verb: Operation name (e.g., "file.rename", "index.rebuild")
             request_data: Request payload (will be JSON serialized)
@@ -44,15 +44,15 @@ class AuditLogger:
             status: "success" or "error"
             error_code: Error code if status is "error"
             context: Request context (uses current context if None)
-        
+
         Returns:
             Generated audit_id
         """
         if context is None:
             context = get_request_context()
-        
+
         audit_id = generate_audit_id()
-        
+
         db = get_db()
         db.execute(
             """
@@ -78,20 +78,20 @@ class AuditLogger:
             ),
         )
         db.commit()
-        
+
         logger.debug(f"Audit: {verb} [{status}] -> {audit_id}")
         return audit_id
-    
+
     def check_idempotency(self, key: str) -> dict[str, Any] | None:
         """
         Check if an idempotency key was already used.
-        
+
         Returns:
             Previous result if key exists, None otherwise
         """
         if not key:
             return None
-        
+
         db = get_db()
         cursor = db.execute(
             """
@@ -104,14 +104,14 @@ class AuditLogger:
             (key,),
         )
         row = cursor.fetchone()
-        
+
         if row:
             return {
                 "result": json.loads(row["result_json"]) if row["result_json"] else None,
                 "status": row["status"],
                 "error_code": row["error_code"],
             }
-        
+
         return None
 
 
@@ -127,37 +127,44 @@ def get_audit_logger() -> AuditLogger:
 def audit_operation(verb: str) -> Callable[[Callable[..., T]], Callable[..., T]]:
     """
     Decorator to automatically audit a function.
-    
+
     Usage:
         @audit_operation("file.rename")
         def rename_file(old_path: str, new_path: str) -> dict:
             ...
     """
+
     def decorator(func: Callable[..., T]) -> Callable[..., T]:
         @wraps(func)
         def wrapper(*args: Any, **kwargs: Any) -> T:
             audit = get_audit_logger()
             context = get_request_context()
-            
+
             # Check idempotency
             if context and context.idempotency_key:
                 existing = audit.check_idempotency(context.idempotency_key)
                 if existing and existing["status"] == "success":
                     logger.info(f"Idempotency hit for {verb}: {context.idempotency_key}")
-                    return existing["result"]
-            
+                    return cast(T, existing["result"])
+
             # Prepare request data from kwargs
             request_data = {
                 k: str(v) if not isinstance(v, (str, int, float, bool, type(None))) else v
                 for k, v in kwargs.items()
             }
-            
+
             try:
                 result = func(*args, **kwargs)
-                
-                # Convert result for logging
-                result_data = result if isinstance(result, dict) else {"result": str(result)}
-                
+
+                # Convert result for logging (must be faithfully replayable for idempotency)
+                result_data: dict[str, Any]
+                if isinstance(result, dict):
+                    result_data = result
+                elif hasattr(result, "model_dump"):
+                    result_data = result.model_dump(mode="json")
+                else:
+                    result_data = {"result": str(result)}
+
                 audit.log(
                     verb=verb,
                     request_data=request_data,
@@ -165,12 +172,12 @@ def audit_operation(verb: str) -> Callable[[Callable[..., T]], Callable[..., T]]
                     status="success",
                     context=context,
                 )
-                
+
                 return result
-                
+
             except Exception as e:
                 error_code = getattr(e, "code", "UNKNOWN")
-                
+
                 audit.log(
                     verb=verb,
                     request_data=request_data,
@@ -179,8 +186,9 @@ def audit_operation(verb: str) -> Callable[[Callable[..., T]], Callable[..., T]]
                     error_code=error_code,
                     context=context,
                 )
-                
+
                 raise
-        
+
         return wrapper
+
     return decorator

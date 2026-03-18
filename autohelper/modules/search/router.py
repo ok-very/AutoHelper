@@ -9,10 +9,10 @@ from .service import SearchService
 
 router = APIRouter(prefix="/search", tags=["search"])
 
+
 @router.get("/", response_model=SearchResponse)
 async def search(
-    q: str = Query(..., min_length=1, description="Search query"),
-    limit: int = 50
+    q: str = Query(..., min_length=1, description="Search query"), limit: int = 50
 ) -> SearchResponse:
     """
     Search for files.
