@@ -37,6 +37,13 @@ interface BfaTodoProject {
   status: 'active' | 'on_hold'
 }
 
+interface BfaTodoPreamble {
+  uid: string
+  slug: string
+  type: 'preamble' | 'preamble-lists'
+  title: string
+}
+
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
@@ -118,6 +125,10 @@ export function BfaTodoPage() {
   const [selected, setSelected] = useState<Set<string>>(new Set())
   const [expanded, setExpanded] = useState<Set<string>>(new Set())
 
+  // Preamble
+  const [preambles, setPreambles] = useState<BfaTodoPreamble[]>([])
+  const [preambleExpanded, setPreambleExpanded] = useState<Set<string>>(new Set())
+
   // Integration status + GDocs
   const [integrations, setIntegrations] = useState<IntegrationStatus | null>(null)
   const [memberMap, setMemberMap] = useState<Record<string, string>>({})
@@ -127,9 +138,11 @@ export function BfaTodoPage() {
     Promise.all([
       api.bfaTodo.status().catch(() => null),
       api.bfaTodo.projects().catch(() => []),
-    ]).then(([s, p]) => {
+      api.bfaTodo.preambles().catch(() => []),
+    ]).then(([s, p, pre]) => {
       if (s) setStatus(s)
       setProjects(p)
+      setPreambles(pre)
       setLoading(false)
     })
   }, [])
@@ -199,6 +212,15 @@ export function BfaTodoPage() {
 
   const toggleSelected = (uid: string) => {
     setSelected(prev => {
+      const next = new Set(prev)
+      if (next.has(uid)) next.delete(uid)
+      else next.add(uid)
+      return next
+    })
+  }
+
+  const togglePreambleExpanded = (uid: string) => {
+    setPreambleExpanded(prev => {
       const next = new Set(prev)
       if (next.has(uid)) next.delete(uid)
       else next.add(uid)
@@ -443,6 +465,39 @@ export function BfaTodoPage() {
               </div>
             )}
 
+            {/* Preamble blocks */}
+            {preambles.length > 0 && (
+              <div style={{ border: '1px solid var(--border)' }}>
+                <div className="flex items-center gap-2 px-3 py-1.5" style={{ borderBottom: '1px solid var(--border)', background: 'var(--bg-surface)', fontFamily: 'var(--font-sans)', fontSize: '11px', color: 'var(--fg-secondary)' }}>
+                  <span style={{ fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.04em' }}>
+                    Preamble
+                  </span>
+                </div>
+                {preambles.map(pre => (
+                  <div key={pre.uid} style={{ borderBottom: '1px solid var(--border)' }}>
+                    <div
+                      className="flex items-center gap-2"
+                      style={{ padding: '6px 12px', cursor: 'pointer', fontFamily: 'var(--font-sans)' }}
+                      onClick={() => togglePreambleExpanded(pre.uid)}
+                    >
+                      <ChevronRight
+                        size={14}
+                        className={clsx('transition-transform shrink-0', preambleExpanded.has(pre.uid) && 'rotate-90')}
+                        style={{ color: 'var(--fg-secondary)' }}
+                      />
+                      <span style={{ fontSize: '13px', fontWeight: 600, color: 'var(--fg)' }}>
+                        {pre.title}
+                      </span>
+                      <Badge variant="neutral" size="xs">{pre.type === 'preamble' ? 'overview' : 'lists'}</Badge>
+                    </div>
+                    {preambleExpanded.has(pre.uid) && (
+                      <PreambleCompositionView uid={pre.uid} />
+                    )}
+                  </div>
+                ))}
+              </div>
+            )}
+
             {/* Project list */}
             <div className="flex-1 overflow-y-auto" style={{ border: '1px solid var(--border)' }}>
               {/* Select all header */}
@@ -617,7 +672,18 @@ function ProjectRow({
 // ProjectCompositionView — iframe with full pipeline fidelity + per-section editing
 // ---------------------------------------------------------------------------
 
-function ProjectCompositionView({ uid }: { uid: string }) {
+// ---------------------------------------------------------------------------
+// IframeCompositionView — shared iframe with contenteditable editing
+// ---------------------------------------------------------------------------
+
+function IframeCompositionView({
+  uid, fetchUrl, onSaveSection, title,
+}: {
+  uid: string
+  fetchUrl: string
+  onSaveSection: (sectionName: string, html: string) => Promise<any>
+  title?: string
+}) {
   const iframeRef = useRef<HTMLIFrameElement>(null)
   const [height, setHeight] = useState(80)
   const [loading, setLoading] = useState(true)
@@ -630,7 +696,7 @@ function ProjectCompositionView({ uid }: { uid: string }) {
   const fetchHtml = useCallback(() => {
     setLoading(true)
     setError(false)
-    fetch(`/api/bfa-todo/projects/${uid}/html`)
+    fetch(fetchUrl)
       .then(r => {
         if (!r.ok) throw new Error(`${r.status}`)
         return r.text()
@@ -643,7 +709,7 @@ function ProjectCompositionView({ uid }: { uid: string }) {
         setError(true)
         setLoading(false)
       })
-  }, [uid])
+  }, [fetchUrl])
 
   useEffect(() => { fetchHtml() }, [fetchHtml])
 
@@ -744,7 +810,7 @@ function ProjectCompositionView({ uid }: { uid: string }) {
 
     setSaving(true)
     try {
-      await api.bfaTodo.updateSection(uid, editingSection, el.innerHTML)
+      await onSaveSection(editingSection, el.innerHTML)
       el.contentEditable = 'false'
       el.classList.remove('editing')
       setEditingSection(null)
@@ -755,7 +821,7 @@ function ProjectCompositionView({ uid }: { uid: string }) {
     } finally {
       setSaving(false)
     }
-  }, [uid, editingSection, fetchHtml])
+  }, [editingSection, onSaveSection, fetchHtml])
 
   if (loading) {
     return (
@@ -768,7 +834,7 @@ function ProjectCompositionView({ uid }: { uid: string }) {
   if (error || !srcdoc) {
     return (
       <div style={{ padding: '4px 40px 12px', fontSize: '12px', color: 'var(--color-error)', fontFamily: 'var(--font-sans)' }}>
-        Failed to load project HTML
+        Failed to load HTML
       </div>
     )
   }
@@ -810,8 +876,30 @@ function ProjectCompositionView({ uid }: { uid: string }) {
           display: 'block',
           background: '#fff',
         }}
-        title={`Project ${uid}`}
+        title={title || uid}
       />
     </div>
+  )
+}
+
+function ProjectCompositionView({ uid }: { uid: string }) {
+  return (
+    <IframeCompositionView
+      uid={uid}
+      fetchUrl={`/api/bfa-todo/projects/${uid}/html`}
+      onSaveSection={(sectionName, html) => api.bfaTodo.updateSection(uid, sectionName, html)}
+      title={`Project ${uid}`}
+    />
+  )
+}
+
+function PreambleCompositionView({ uid }: { uid: string }) {
+  return (
+    <IframeCompositionView
+      uid={uid}
+      fetchUrl={`/api/bfa-todo/preambles/${uid}/html`}
+      onSaveSection={(sectionName, html) => api.bfaTodo.updatePreambleSection(uid, sectionName, html)}
+      title={`Preamble ${uid}`}
+    />
   )
 }

@@ -138,29 +138,81 @@ def _parse_header_fields(text):
     else:
         main_part = text
 
+    # --- Extract budget values from main_part before stripping ---
+
+    def _extract_budgets(s):
+        """Pull budget values from text (parenthesized or bare)."""
+        if re.search(r"total", s, re.IGNORECASE):
+            val = utils.extract_money(s, "Total")
+            if val != "$TBC":
+                info["total_budget"] = val
+        if re.search(r"art", s, re.IGNORECASE):
+            val = utils.extract_money(s, "Art")
+            if val != "$TBC":
+                info["art_budget"] = val
+        if re.search(r"fee", s, re.IGNORECASE):
+            val = utils.extract_money(s, "BFA fee")
+            if val != "$TBC":
+                info["bfa_fee"] = val
+
+    # Step 1: Strip parenthesized budget groups (closed parens)
+    # Allow trailing text (dollar amounts, "1.5 million", etc.) after the closing paren
     while True:
         budget_match = re.search(
-            r"\(([^)]*(?:Art|Artwork|Total|Fee)[^)]*)\)\s*$",
+            r"\s*_*\(([^)]*(?:Art|Artwork|Total|Fee|Budget)[^)]*)\)"
+            r"[^(]*$",
             main_part,
             re.IGNORECASE,
         )
         if budget_match:
-            content = budget_match.group(1)
-            if re.search(r"total", content, re.IGNORECASE):
-                val = utils.extract_money(content, "Total")
-                if val != "$TBC":
-                    info["total_budget"] = val
-            if re.search(r"art", content, re.IGNORECASE):
-                val = utils.extract_money(content, "Art")
-                if val != "$TBC":
-                    info["art_budget"] = val
-            if re.search(r"fee", content, re.IGNORECASE):
-                val = utils.extract_money(content, "BFA fee")
-                if val != "$TBC":
-                    info["bfa_fee"] = val
+            _extract_budgets(budget_match.group(1))
+            _extract_budgets(main_part[budget_match.end():])
             main_part = main_part[: budget_match.start()].strip()
         else:
             break
+
+    # Step 2: Strip budget parens (closed or unclosed) containing budget keywords + $ or :
+    # e.g. "(Artwork: $135,000/Total: $200,580" or "(Total:TBC)" or "(Budget:"
+    while True:
+        budget_paren = re.search(
+            r"\s*_*\(?[^A-Za-z(]*(?:Art|Artwork|Total|Fee|Budget)\s*[:$|/][^)]*\)?\s*$",
+            main_part,
+            re.IGNORECASE,
+        )
+        if budget_paren:
+            _extract_budgets(main_part[budget_paren.start():])
+            main_part = main_part[: budget_paren.start()].strip()
+        else:
+            break
+
+    # Step 3: Strip bare (unparenthesized) budget text at end of string
+    # e.g. "Total $3,887,326.08" or "BFA Project Budget$7,500.00" or ", Total"
+    bare_budget = re.search(
+        r"(?:^|[\s,|])"
+        r"(?:(?:Total|Artwork|Art|BFA)\s*(?:Project\s*)?(?:Budget|Fee)?)"
+        r"\s*[:.]?\s*(?:\(?[\s$\d,.]+.*)?$",
+        main_part,
+        re.IGNORECASE,
+    )
+    if bare_budget:
+        # Only strip if there's actual budget content (not just "Gateway Artwork" as project name)
+        matched = main_part[bare_budget.start():].strip()
+        # Require either $ or : or ( or end-of-string-after-budget-keyword
+        if re.search(r"[\$:(]|(?:Total|Budget|Fee)\s*$", matched, re.IGNORECASE):
+            _extract_budgets(matched)
+            main_part = main_part[: bare_budget.start()].strip()
+
+    # Step 4: Strip bare dollar amounts at end (e.g. "| $50,000" or "Canada Goose $")
+    bare_money = re.search(
+        r"[\s|]+\$[\d,.]*[kK]?\s*$",
+        main_part,
+    )
+    if bare_money:
+        _extract_budgets(main_part[bare_money.start():])
+        main_part = main_part[: bare_money.start()].strip()
+
+    # Clean trailing pipes, underscores, dashes
+    main_part = re.sub(r"[\s|_\-–—]+$", "", main_part).strip()
 
     team_match = re.match(r"^\s*\(([^)]*)\)\s*", main_part)
     if team_match:
@@ -171,18 +223,34 @@ def _parse_header_fields(text):
     if len(parts) > 1:
         info["client"] = utils.normalize_text(parts[0])
         proj_part = utils.normalize_text(parts[1])
-        # Strip any budget parens that survived the main_part cleanup
-        # (can happen when budget appears mid-string before city)
+        # Strip budget fragments that survived: require $ or : after keyword
         proj_part = re.sub(
-            r"\s*\([^)]*(?:Art|Artwork|Total|Fee|\$)[^)]*\)\s*",
+            r"\s*\(?[^)]*(?:(?:Art|Artwork|Total|Fee)\s*[:|\s]\s*\$)[^)]*\)?\s*",
             " ", proj_part, flags=re.IGNORECASE,
-        ).strip().rstrip(")")
-        city_parts = proj_part.rsplit(", ", 1)
-        if len(city_parts) > 1 and len(city_parts[1]) < 40:
-            info["project_name"] = city_parts[0].strip()
-            info["city"] = city_parts[1].strip()
-        else:
+        ).strip()
+        # Strip bare dollar amounts (e.g. "$50,000" as entire proj_part)
+        proj_part = re.sub(r"^\$[\d,.]+[kK]?\s*$", "", proj_part).strip()
+        # Strip trailing stray parens, pipes, underscores
+        proj_part = re.sub(r"[)|_\s]+$", "", proj_part).strip()
+        # Strip trailing province codes (e.g. "Burnaby BC")
+        proj_part = re.sub(r"\s+(?:BC|AB|ON|QC)\s*$", "", proj_part).strip()
+        # Extract city from parens at end, e.g. "Broadview Village (City of Burnaby"
+        city_paren = re.search(r"\((?:City\s+of\s+)?([A-Z][a-zA-Z\s]+?)\s*\)?\s*$", proj_part)
+        if city_paren:
+            city = utils.normalize_text(city_paren.group(1))
+            city = re.sub(r"\s+(?:BC|AB|ON|QC)\s*$", "", city).strip()
+            info["city"] = city
+            proj_part = proj_part[:city_paren.start()].strip().rstrip(",")
             info["project_name"] = proj_part
+        else:
+            city_parts = proj_part.rsplit(", ", 1)
+            if len(city_parts) > 1 and len(city_parts[1]) < 40:
+                info["project_name"] = city_parts[0].strip()
+                city = city_parts[1].strip()
+                city = re.sub(r"\s+(?:BC|AB|ON|QC)\s*$", "", city).strip()
+                info["city"] = city
+            else:
+                info["project_name"] = proj_part
     else:
         info["client"] = utils.normalize_text(main_part)
 

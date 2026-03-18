@@ -173,6 +173,90 @@ def get_status() -> dict[str, Any]:
     }
 
 
+def _collect_preambles() -> tuple[dict[str, Any] | None, dict[str, Any] | None]:
+    """Load preamble blocks, merging extra preamble snippets into preamble-lists.
+
+    Returns (overview, proposals) where overview is the first type=preamble block
+    and proposals is the preamble-lists block with any extra preamble content appended.
+    """
+    projects = load_all_projects()
+    overview = None
+    proposals = None
+    extras: list[dict[str, Any]] = []
+
+    for p in projects:
+        ptype = p.get("type")
+        if ptype == "preamble":
+            if overview is None:
+                overview = p
+            else:
+                extras.append(p)
+        elif ptype == "preamble-lists":
+            proposals = p
+
+    # Fold extra preamble snippets into the proposals block
+    if proposals and extras:
+        content = proposals.get("sections", {}).get("content", {})
+        html = content.get("html", "")
+        text = content.get("text", "")
+        for ex in extras:
+            ex_content = ex.get("sections", {}).get("content", {})
+            ex_html = ex_content.get("html", "")
+            ex_text = ex_content.get("text", "")
+            if ex_html.strip():
+                html = html.rstrip() + "\n" + ex_html
+                text = text.rstrip() + "\n" + ex_text
+        proposals.setdefault("sections", {}).setdefault("content", {})
+        proposals["sections"]["content"]["html"] = html
+        proposals["sections"]["content"]["text"] = text
+
+    return overview, proposals
+
+
+def list_preambles() -> list[dict[str, Any]]:
+    """Return summary list of preamble blocks (2 items: overview + proposals)."""
+    _ensure_data_dir()
+    seed_if_empty()
+
+    overview, proposals = _collect_preambles()
+    result = []
+    if overview:
+        result.append({
+            "uid": overview["uid"],
+            "slug": overview.get("slug", ""),
+            "type": "preamble",
+            "title": "Projects Overview",
+        })
+    if proposals:
+        result.append({
+            "uid": proposals["uid"],
+            "slug": proposals.get("slug", ""),
+            "type": "preamble-lists",
+            "title": "Proposals & Programs",
+        })
+    return result
+
+
+def get_preamble_html(uid: str) -> str | None:
+    """Return fully-inlined HTML for a single preamble block."""
+    _ensure_data_dir()
+
+    overview, proposals = _collect_preambles()
+    # Match by uid against the two merged blocks
+    target = None
+    if overview and overview["uid"] == uid:
+        target = overview
+    elif proposals and proposals["uid"] == uid:
+        target = proposals
+
+    if not target:
+        return None
+
+    from .pipeline.renderer import render_one
+
+    return render_one(target)
+
+
 def list_projects() -> list[dict[str, Any]]:
     """Return summary list of all projects."""
     from .pipeline.processor import derive_metadata

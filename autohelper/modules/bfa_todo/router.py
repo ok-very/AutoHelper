@@ -23,6 +23,30 @@ async def get_status() -> dict[str, Any]:
     return service.get_status()
 
 
+@router.get("/preambles")
+async def list_preambles() -> list[dict[str, Any]]:
+    """List preamble blocks (overview + proposals)."""
+    return service.list_preambles()
+
+
+@router.get("/preambles/{uid}/html", response_class=HTMLResponse)
+async def get_preamble_html(uid: str) -> HTMLResponse:
+    """Return self-contained HTML for a preamble block (for iframe embedding)."""
+    html = service.get_preamble_html(uid)
+    if not html:
+        raise HTTPException(404, f"Preamble {uid} not found")
+    return HTMLResponse(html)
+
+
+@router.put("/preambles/{uid}/sections/{section_name}")
+async def update_preamble_section(uid: str, section_name: str, req: UpdateSectionContentRequest) -> dict[str, Any]:
+    """Save a single preamble section edit."""
+    result = service.update_project_section(uid, section_name, req.html)
+    if result is None:
+        raise HTTPException(404, f"Preamble {uid} not found")
+    return result
+
+
 @router.get("/projects")
 async def list_projects() -> list[dict[str, Any]]:
     """List all projects (summary)."""

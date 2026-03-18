@@ -229,6 +229,14 @@ export const api = {
       put(`/api/bfa-todo/projects/${uid}/sections/${sectionName}`, { html }).then(r => r.json()),
     updatePhase: (uid: string, phase: string) =>
       put(`/api/bfa-todo/projects/${uid}/phase`, { phase }).then(r => r.json()),
+    preambles: () => fetchJson<any[]>('/api/bfa-todo/preambles'),
+    preambleHtml: (uid: string) =>
+      fetch(`/api/bfa-todo/preambles/${uid}/html`).then(r => {
+        if (!r.ok) throw new Error(`${r.status}`)
+        return r.text()
+      }),
+    updatePreambleSection: (uid: string, sectionName: string, html: string) =>
+      put(`/api/bfa-todo/preambles/${uid}/sections/${sectionName}`, { html }).then(r => r.json()),
   },
 
   health: () => fetchJson<Record<string, unknown>>('/health'),

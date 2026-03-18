@@ -3,7 +3,9 @@
 <section class="bfa-preamble-lists" data-preamble-uid="{{ p.uid }}" id="p-{{ p.slug }}">
 {% for sec_name, sec_data in p.sections.items() %}
 {% if sec_data.html and sec_data.html.strip() %}
+<div data-section="{{ sec_name }}">
 {{ sec_data.html }}
+</div>
 {% endif %}
 {% endfor %}
 </section>
