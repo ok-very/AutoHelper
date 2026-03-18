@@ -464,7 +464,7 @@ body {
   outline: none;
 }
 .search-input:focus, .filter-select:focus { border-color: var(--accent); }
-.search-input { flex: 1; min-width: 160px; }
+.search-input { flex: 1; min-width: 160px; padding-left: 28px; }
 .filter-select { min-width: 110px; }
 .filter-checkbox {
   display: flex;
