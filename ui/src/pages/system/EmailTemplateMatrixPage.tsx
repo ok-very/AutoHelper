@@ -337,18 +337,39 @@ function MergeFieldPill({ field }: { field: string }) {
 // ---------------------------------------------------------------------------
 
 function SubjectEditor({ value, onChange }: { value: string; onChange: (v: string) => void }) {
+  const editorRef = useRef<HTMLDivElement>(null)
+  const isInternalChange = useRef(false)
+
+  useEffect(() => {
+    if (editorRef.current && !isInternalChange.current) {
+      editorRef.current.innerHTML = textToPills(escapeHtml(value))
+    }
+    isInternalChange.current = false
+  }, [value])
+
+  const handleInput = useCallback(() => {
+    if (!editorRef.current) return
+    isInternalChange.current = true
+    onChange(pillsToText(editorRef.current.innerHTML).replace(/<[^>]*>/g, '').replace(/&amp;/g, '&').replace(/&lt;/g, '<').replace(/&gt;/g, '>'))
+  }, [onChange])
+
   return (
-    <input
-      type="text"
-      value={value}
-      onChange={e => onChange(e.target.value)}
+    <div
+      ref={editorRef}
+      contentEditable
+      onInput={handleInput}
       style={{
         flex: 1, fontFamily: 'Calibri, Verdana, sans-serif', fontSize: '13px',
         padding: '4px 8px', border: '1px solid var(--border)', borderRadius: '2px',
-        background: 'var(--bg)',
+        background: 'var(--bg)', minHeight: '28px', lineHeight: 1.6,
+        whiteSpace: 'nowrap', overflow: 'hidden', outline: 'none',
       }}
     />
   )
+}
+
+function escapeHtml(text: string): string {
+  return text.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
 }
 
 // ---------------------------------------------------------------------------
