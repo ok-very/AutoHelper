@@ -341,49 +341,7 @@ class MailService:
             # 3. Extract Data
             dev, proj, proj_id = extract_project_info(subject)
 
-            # 4. Save to Disk (OneDrive)
-            output_base = self.settings.mail_output_path
-
-            date_str = received_dt.strftime("%Y-%m-%d")
-            safe_sub = make_safe_filename(clean_subject(subject))
-            folder_name = f"{date_str}_{safe_sub}"
-
-            project_folder = output_base / make_safe_filename(proj_id, 100)
-            email_folder = project_folder / folder_name
-
-            if email_folder.exists():
-                # Already on disk, maybe from another run
-                return False
-
-            email_folder.mkdir(parents=True, exist_ok=True)
-
-            # Save body
-            body = getattr(item, "Body", "")
-            with open(email_folder / "body.txt", "w", encoding="utf-8") as f:
-                f.write(body)
-
-            # Attachments - guard against items without Attachments collection
-            attachments = getattr(item, "Attachments", None)
-            if attachments is not None and attachments.Count > 0:
-                att_folder = email_folder / "attachments"
-                att_folder.mkdir(exist_ok=True)
-                for i in range(attachments.Count):
-                    att = attachments.Item(i + 1)
-
-                    # Sanitize filename and handle collisions
-                    raw_name = getattr(att, "FileName", "") or "attachment"
-                    safe_name = make_safe_filename(raw_name, max_length=100)
-
-                    base, ext = os.path.splitext(safe_name)
-                    candidate = att_folder / safe_name
-                    index = 1
-                    while candidate.exists():
-                        candidate = att_folder / f"{base}_{index}{ext}"
-                        index += 1
-
-                    att.SaveAsFile(str(candidate))
-
-            # 5. Save to DB (Transient)
+            # 4. Save index to DB (metadata only — body stays in Outlook)
             self._save_transient_record(item, proj_id, received_dt, entry_id, account=account)
 
             return True
@@ -406,26 +364,30 @@ class MailService:
         self, item: Any, project_id: str, received_dt: datetime, entry_id: str,
         account: str = "",
     ) -> None:
-        """Save email metadata to SQLite."""
+        """Save email index record to SQLite.
+
+        Stores only lightweight metadata for fast listing. Email body content
+        stays in Outlook — fetched on demand when the detail view opens.
+        """
         db = get_db()
 
         subject = getattr(item, "Subject", "")
         sender = getattr(item, "SenderEmailAddress", "")
-        body = getattr(item, "Body", "")[:500]  # Preview
-        body_html = getattr(item, "HTMLBody", None)
 
         metadata = {
             "importance": getattr(item, "Importance", 1),
             "dev": extract_project_info(subject)[0],
+            "sender_name": getattr(item, "SenderName", ""),
+            "has_attachments": bool(getattr(item, "Attachments", None) and item.Attachments.Count > 0),
         }
 
         db.execute(
             """
             INSERT OR IGNORE INTO transient_emails
-                (id, subject, sender, received_at, project_id, body_preview, body_html, metadata, account)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                (id, subject, sender, received_at, project_id, body_preview, metadata, account)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
             """,
-            (entry_id, subject, sender, received_dt, project_id, body, body_html, json.dumps(metadata), account),
+            (entry_id, subject, sender, received_dt, project_id, None, json.dumps(metadata), account),
         )
         db.commit()
 

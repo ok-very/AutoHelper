@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react'
-import { Mail, FolderInput, Play, Square, RefreshCw } from 'lucide-react'
+import { Mail, Search, Play, Square, RefreshCw } from 'lucide-react'
 import { ModuleLayout } from '@/components/ModuleLayout'
 import { CardShell } from '@/components/settings/CardShell'
 import { StatusBadge } from '@/components/settings/StatusBadge'
@@ -7,28 +7,28 @@ import { FieldRow } from '@/components/settings/FieldRow'
 import { FeedbackMessage } from '@/components/FeedbackMessage'
 import { api } from '@/lib/api'
 
+interface DiscoveredAccount {
+  name: string
+  has_inbox: string
+}
+
 export function MailSettingsPage() {
   return (
     <ModuleLayout module="mail" activePage="settings">
       <header className="header">
         <h1>Mail Settings</h1>
       </header>
-      <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
-        <MailServiceCard />
-        <MailStorageCard />
-      </div>
+      <MailServiceCard />
     </ModuleLayout>
   )
 }
-
-// ---------------------------------------------------------------------------
-// Service control
-// ---------------------------------------------------------------------------
 
 function MailServiceCard() {
   const [enabled, setEnabled] = useState(false)
   const [running, setRunning] = useState(false)
   const [interval, setIntervalVal] = useState(30)
+  const [accounts, setAccounts] = useState<DiscoveredAccount[]>([])
+  const [scanning, setScanning] = useState(false)
   const [feedback, setFeedback] = useState('')
   const [feedbackErr, setFeedbackErr] = useState(false)
   const [saving, setSaving] = useState(false)
@@ -72,31 +72,93 @@ function MailServiceCard() {
     loadStatus()
   }
 
+  const handleScan = async () => {
+    setScanning(true)
+    setFeedback('')
+    try {
+      const response = await fetch('/mail/scan-accounts')
+      if (response.ok) {
+        const data = await response.json()
+        setAccounts(data)
+        if (data.length === 0) {
+          setFeedback('No Outlook accounts found. Is Outlook running?')
+          setFeedbackErr(true)
+        } else {
+          setFeedback(`Found ${data.length} account${data.length !== 1 ? 's' : ''}`)
+          setFeedbackErr(false)
+        }
+      }
+    } catch {
+      setFeedback('Could not connect to Outlook')
+      setFeedbackErr(true)
+    }
+    setScanning(false)
+  }
+
   return (
     <CardShell
       icon={<Mail size={18} />}
       iconBg="icon-blue"
-      title="Mail Polling"
+      title="Mail Service"
       badge={<StatusBadge ok={running} label={running ? 'Running' : 'Stopped'} />}
     >
-      <FieldRow label="Enabled">
-        <label className="toggle">
-          <input
-            type="checkbox"
-            checked={enabled}
-            onChange={e => toggleEnabled(e.target.checked)}
-          />
-          <span className="toggle-slider" />
-        </label>
+      {/* Scan for accounts */}
+      <FieldRow label="Accounts">
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', flex: 1 }}>
+          <div className="field-row-inline">
+            <button
+              className="btn btn-sm btn-primary"
+              onClick={handleScan}
+              disabled={scanning}
+            >
+              <Search size={12} />
+              {scanning ? 'Scanning...' : 'Scan Outlook'}
+            </button>
+          </div>
+          {accounts.length > 0 && (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+              {accounts.map(acc => (
+                <div
+                  key={acc.name}
+                  style={{
+                    display: 'flex', alignItems: 'center', gap: '8px',
+                    padding: '6px 10px', background: 'var(--bg-surface)', borderRadius: '2px',
+                    fontFamily: 'var(--font-sans)', fontSize: '13px',
+                  }}
+                >
+                  <span style={{
+                    width: 6, height: 6, borderRadius: '50%', flexShrink: 0,
+                    background: acc.has_inbox === 'true' ? 'var(--color-success)' : 'var(--fg-disabled)',
+                  }} />
+                  <span style={{ flex: 1, color: 'var(--fg)' }}>{acc.name}</span>
+                  {acc.has_inbox === 'true' ? (
+                    <span style={{ fontSize: '11px', color: 'var(--fg-secondary)' }}>Inbox found</span>
+                  ) : (
+                    <span style={{ fontSize: '11px', color: 'var(--fg-disabled)' }}>No inbox</span>
+                  )}
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
       </FieldRow>
 
-      <FieldRow label="Poll Interval">
+      {/* Enable + interval */}
+      <FieldRow label="Polling">
         <div className="field-row-inline">
+          <label className="toggle">
+            <input
+              type="checkbox"
+              checked={enabled}
+              onChange={e => toggleEnabled(e.target.checked)}
+            />
+            <span className="toggle-slider" />
+          </label>
           <select
             className="setting-input"
             value={interval}
             onChange={e => setIntervalVal(Number(e.target.value))}
-            style={{ width: '140px' }}
+            style={{ width: '130px' }}
           >
             <option value={10}>10 seconds</option>
             <option value={30}>30 seconds</option>
@@ -106,7 +168,7 @@ function MailServiceCard() {
             <option value={600}>10 minutes</option>
           </select>
           <button
-            className="btn btn-sm btn-primary"
+            className="btn btn-sm"
             disabled={saving}
             onClick={() => save({ mail_poll_interval: interval })}
           >
@@ -115,6 +177,7 @@ function MailServiceCard() {
         </div>
       </FieldRow>
 
+      {/* Service controls */}
       <FieldRow label="Service">
         <div className="field-row-inline">
           <button
@@ -133,108 +196,6 @@ function MailServiceCard() {
           </button>
           <button className="btn btn-sm" onClick={loadStatus}>
             <RefreshCw size={12} />
-          </button>
-        </div>
-      </FieldRow>
-
-      <FeedbackMessage message={feedback} isError={feedbackErr} />
-    </CardShell>
-  )
-}
-
-// ---------------------------------------------------------------------------
-// Storage — output path, ingest path (doubles as PST drop folder), import
-// ---------------------------------------------------------------------------
-
-function MailStorageCard() {
-  const [outputPath, setOutputPath] = useState('')
-  const [ingestPath, setIngestPath] = useState('')
-  const [ingesting, setIngesting] = useState(false)
-  const [feedback, setFeedback] = useState('')
-  const [feedbackErr, setFeedbackErr] = useState(false)
-
-  useEffect(() => {
-    fetch('/mail/status')
-      .then(r => r.ok ? r.json() : null)
-      .then(data => {
-        if (data) {
-          setOutputPath(data.output_path || '')
-          setIngestPath(data.ingest_path || '')
-        }
-      })
-      .catch(() => {})
-  }, [])
-
-  const save = async (key: string, value: string) => {
-    setFeedback('')
-    try {
-      const r = await api.config.save({ [key]: value })
-      if (r.ok) { setFeedback('Saved'); setFeedbackErr(false) }
-      else { setFeedback('Error saving'); setFeedbackErr(true) }
-    } catch {
-      setFeedback('Network error'); setFeedbackErr(true)
-    }
-  }
-
-  const browse = async (setter: (v: string) => void, configKey: string) => {
-    const result = await api.config.selectFolder()
-    if (result.path) {
-      setter(result.path)
-      await save(configKey, result.path)
-    }
-  }
-
-  const handleIngest = async () => {
-    if (!ingestPath.trim()) return
-    setIngesting(true)
-    setFeedback('')
-    try {
-      const response = await fetch('/mail/ingest', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ file_path: ingestPath.trim() }),
-      })
-      const result = await response.json()
-      if (result.success) {
-        setFeedback(`Ingested ${result.count ?? 0} emails`)
-        setFeedbackErr(false)
-      } else {
-        setFeedback(result.error ?? 'Ingestion failed')
-        setFeedbackErr(true)
-      }
-    } catch {
-      setFeedback('Network error'); setFeedbackErr(true)
-    }
-    setIngesting(false)
-  }
-
-  return (
-    <CardShell
-      icon={<FolderInput size={18} />}
-      iconBg="icon-blue"
-      title="Storage"
-    >
-      <FieldRow label="Email Output">
-        <div className="field-row-inline" style={{ flex: 1 }}>
-          <span className="configured-value" style={{ flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-            {outputPath || 'Not set'}
-          </span>
-          <button className="btn btn-sm" onClick={() => browse(setOutputPath, 'mail_output_path')}>Browse</button>
-        </div>
-      </FieldRow>
-
-      <FieldRow label="PST/OST Folder">
-        <div className="field-row-inline" style={{ flex: 1 }}>
-          <span className="configured-value" style={{ flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-            {ingestPath || 'Not set'}
-          </span>
-          <button className="btn btn-sm" onClick={() => browse(setIngestPath, 'mail_ingest_path')}>Browse</button>
-          <button
-            className="btn btn-sm btn-primary"
-            onClick={handleIngest}
-            disabled={ingesting || !ingestPath.trim()}
-          >
-            {ingesting ? 'Importing...' : 'Import'}
           </button>
         </div>
       </FieldRow>

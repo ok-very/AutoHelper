@@ -93,6 +93,43 @@ async def get_status() -> MailServiceStatus:
     )
 
 
+@router.get("/scan-accounts")
+async def scan_accounts() -> list[dict[str, str]]:
+    """Discover Outlook accounts from the live COM installation."""
+    from autohelper.shared.platform import can_use_outlook
+
+    if not can_use_outlook():
+        return []
+
+    try:
+        import pythoncom
+        import win32com.client
+
+        pythoncom.CoInitialize()
+        try:
+            outlook = win32com.client.Dispatch("Outlook.Application")
+            namespace = outlook.GetNamespace("MAPI")
+            accounts: list[dict[str, str]] = []
+            for i in range(namespace.Folders.Count):
+                folder = namespace.Folders.Item(i + 1)
+                name = getattr(folder, "Name", f"Account {i + 1}")
+                # Check if it has an Inbox
+                has_inbox = False
+                try:
+                    for j in range(folder.Folders.Count):
+                        if getattr(folder.Folders.Item(j + 1), "Name", "").lower() == "inbox":
+                            has_inbox = True
+                            break
+                except Exception:
+                    pass
+                accounts.append({"name": name, "has_inbox": str(has_inbox).lower()})
+            return accounts
+        finally:
+            pythoncom.CoUninitialize()
+    except Exception:
+        return []
+
+
 @router.post("/start")
 async def start_service() -> dict[str, str]:
     """Start the mail polling service."""
@@ -160,7 +197,7 @@ async def list_emails(
 
 @router.get("/emails/{email_id}", response_model=TransientEmail)
 async def get_email(email_id: str) -> TransientEmail:
-    """Get a single transient email by ID."""
+    """Get a single transient email by ID, with body fetched from Outlook if available."""
     db = get_db()
 
     row = db.execute(
@@ -175,7 +212,30 @@ async def get_email(email_id: str) -> TransientEmail:
     if not row:
         raise HTTPException(status_code=404, detail="Email not found")
 
-    return _row_to_email(row)
+    email = _row_to_email(row)
+
+    # Try to fetch body from Outlook COM on demand
+    from autohelper.shared.platform import can_use_outlook
+
+    if can_use_outlook() and not email.body_preview:
+        try:
+            import pythoncom
+            import win32com.client
+
+            pythoncom.CoInitialize()
+            try:
+                outlook = win32com.client.Dispatch("Outlook.Application")
+                namespace = outlook.GetNamespace("MAPI")
+                item = namespace.GetItemFromID(email_id)
+                if item:
+                    email.body_preview = getattr(item, "Body", "")[:1000]
+                    email.body_html = getattr(item, "HTMLBody", None)
+            finally:
+                pythoncom.CoUninitialize()
+        except Exception:
+            pass  # Body unavailable — that's fine, we still have the metadata
+
+    return email
 
 
 # =============================================================================
