@@ -200,6 +200,9 @@ export const api = {
       }).then(r => r.json()),
     get: (id: string) => fetchJson<any>(`/api/projects/${id}`),
     provision: (id: string) => post(`/api/projects/${id}/provision`).then(r => r.json()),
+    templates: (id: string) => fetchJson<any>(`/api/projects/${id}/templates`),
+    compose: (id: string, templateKey: string) =>
+      post(`/api/projects/${id}/compose`, { template_key: templateKey }).then(r => r.json()),
     status: (id: string) => fetchJson<any>(`/api/projects/${id}/status`),
     delete: (id: string) =>
       fetch(`/api/projects/${id}`, { method: 'DELETE' }).then(r => r.json()),

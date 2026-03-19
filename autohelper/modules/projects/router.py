@@ -167,6 +167,30 @@ async def get_project(project_id: str) -> ProjectRecord:
     return project
 
 
+@router.get("/{project_id}/templates")
+async def project_templates(project_id: str) -> dict:
+    """Get email templates relevant to this project's resolved stages."""
+    try:
+        stages = service.list_project_templates(project_id)
+        total = sum(len(s["templates"]) for s in stages)
+        return {"stages": stages, "total": total}
+    except ValueError as e:
+        raise HTTPException(status_code=404, detail=str(e)) from e
+
+
+class ComposeRequest(BaseModel):
+    template_key: str
+
+
+@router.post("/{project_id}/compose")
+async def compose_project_email(project_id: str, body: ComposeRequest) -> dict:
+    """Compose an email from project context + template."""
+    try:
+        return service.compose_email(project_id, body.template_key)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e)) from e
+
+
 @router.post("/{project_id}/provision", response_model=ProjectRecord)
 async def provision_project(project_id: str) -> ProjectRecord:
     """Create ClickUp list and tasks for a draft project."""

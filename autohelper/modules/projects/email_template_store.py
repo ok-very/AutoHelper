@@ -91,6 +91,34 @@ class EmailTemplateStore:
                     return t
         return None
 
+    def merge(self, key: str, context: dict[str, str]) -> dict[str, Any] | None:
+        """Merge a template with context data. Returns subject + html_body + unfilled fields."""
+        tmpl = self.get(key)
+        if tmpl is None:
+            return None
+
+        subject = tmpl.subject
+        body = tmpl.body_html
+        unfilled: list[str] = []
+
+        for field in tmpl.merge_fields:
+            placeholder = f"{{{{{field}}}}}"
+            value = context.get(field, "")
+            if value:
+                subject = subject.replace(placeholder, value)
+                body = body.replace(placeholder, value)
+            else:
+                unfilled.append(field)
+
+        return {
+            "subject": subject,
+            "html_body": body,
+            "template_key": key,
+            "template_title": tmpl.title,
+            "unfilled": unfilled,
+            "recipients": tmpl.recipients,
+        }
+
     def update_template(self, key: str, updates: dict[str, Any]) -> bool:
         """Update a single template by key. Returns True if found."""
         data = self.load()

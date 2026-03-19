@@ -142,6 +142,98 @@ def import_policy_matrix(xlsx_path: str) -> PolicyMatrixData:
     return data
 
 
+# ── Email compose ────────────────────────────────────────────────
+
+
+def list_project_templates(project_id: str) -> list[dict]:
+    """Return email templates relevant to a project's resolved tasks, grouped by stage."""
+    from .email_template_store import get_email_template_store
+
+    store = get_project_store()
+    project = store.get(project_id)
+    if project is None:
+        raise ValueError(f"Project {project_id} not found")
+
+    manifest = resolve_template(project.intake)
+    tmpl_store = get_email_template_store()
+
+    # Collect template keys from resolved tasks
+    stages: dict[int, list[dict]] = {}
+    seen_keys: set[str] = set()
+
+    for task in manifest.tasks:
+        key = task.email_template_key
+        if not key or key in seen_keys:
+            continue
+        seen_keys.add(key)
+
+        tmpl = tmpl_store.get(key)
+        if tmpl is None:
+            continue
+
+        stage = task.stage
+        if stage not in stages:
+            stages[stage] = []
+        stages[stage].append({
+            "key": tmpl.key,
+            "title": tmpl.title,
+            "recipients": tmpl.recipients,
+            "task_name": task.name,
+            "task_temp_id": task.temp_id,
+        })
+
+    # Build stage-grouped result
+    result = []
+    for stage_info in manifest.stages:
+        templates = stages.get(stage_info.number, [])
+        if templates:
+            result.append({
+                "stage": stage_info.number,
+                "name": stage_info.name,
+                "templates": templates,
+            })
+
+    return result
+
+
+def compose_email(project_id: str, template_key: str) -> dict:
+    """Compose an email from a project's context and a template."""
+    from .email_template_store import get_email_template_store
+
+    store = get_project_store()
+    project = store.get(project_id)
+    if project is None:
+        raise ValueError(f"Project {project_id} not found")
+
+    overlay = load_city_overlay(project.intake.municipality)
+
+    # Build merge context from intake + overlay
+    intake = project.intake
+    context: dict[str, str] = {
+        "project_name": intake.project_name,
+        "developer": intake.developer_name or "",
+        "developer_name": intake.developer_name or "",
+        "city_name": overlay.city_name,
+        "municipality": overlay.city_name,
+        "neighbourhood": intake.neighbourhood or "",
+        "fsr": str(intake.fsr) if intake.fsr else "",
+        "construction_cost": f"${intake.construction_cost:,.0f}" if intake.construction_cost else "",
+    }
+
+    # Config-level fields (PM name, etc.)
+    from autohelper.config.store import ConfigStore
+    cfg = ConfigStore().load()
+    context["your_name"] = cfg.get("pm_name", "")
+    context["project_coordinator"] = cfg.get("project_coordinator", "")
+
+    tmpl_store = get_email_template_store()
+    result = tmpl_store.merge(template_key, context)
+    if result is None:
+        raise ValueError(f"Template '{template_key}' not found")
+
+    return result
+
+
 # ── Write operations ─────────────────────────────────────────────
 
 

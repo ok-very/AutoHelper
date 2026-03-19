@@ -7,6 +7,7 @@ from datetime import datetime, timezone
 from typing import Any
 
 from fastapi import APIRouter, HTTPException, Query
+from pydantic import BaseModel
 
 from autohelper.config import get_settings
 from autohelper.db import get_db
@@ -307,3 +308,45 @@ async def ingest_pst(request: IngestRequest) -> IngestResponse:
         count=result.get("count"),
         error=result.get("error"),
     )
+
+
+# =============================================================================
+# DRAFT CREATION
+# =============================================================================
+
+
+class DraftCreateRequest(BaseModel):
+    to: str = ""
+    subject: str
+    body: str
+    cc: str | None = None
+
+
+@router.post("/draft/create")
+async def create_draft(request: DraftCreateRequest) -> dict[str, Any]:
+    """Create an Outlook draft from composed content."""
+    from autohelper.modules.mail.draft import (
+        can_use_outlook,
+        create_draft_via_com,
+    )
+
+    if can_use_outlook():
+        try:
+            result = create_draft_via_com(
+                to=request.to,
+                subject=request.subject,
+                body=request.body,
+                cc=request.cc,
+            )
+            return {"ok": True, "strategy": "outlook_com", **result}
+        except Exception as e:
+            return {"ok": False, "error": str(e)}
+
+    # No Outlook available — return preview
+    return {
+        "ok": False,
+        "strategy": "preview",
+        "subject": request.subject,
+        "html_body": request.body,
+        "error": "Outlook COM not available — draft not created",
+    }
