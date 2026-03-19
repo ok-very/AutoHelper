@@ -292,6 +292,21 @@ def _update_triage(
         )
     db.commit()
 
+    # Best-effort sync: write triage category back to Outlook
+    # This is a convenience — our DB is the source of truth
+    _TRIAGE_CATEGORY_MAP = {
+        "action_required": "BFA: Action Required",
+        "informational": "BFA: FYI",
+        "archived": "BFA: Archived",
+    }
+    category = _TRIAGE_CATEGORY_MAP.get(status)
+    if category:
+        try:
+            from autohelper.modules.mail.service import sync_category_to_outlook
+            sync_category_to_outlook(email_id, category)
+        except Exception:
+            pass  # Non-critical — Outlook sync is a convenience
+
     return TriageResponse(
         status="ok",
         email_id=email_id,

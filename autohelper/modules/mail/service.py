@@ -147,6 +147,46 @@ def make_safe_filename(text: str, max_length: int = 50) -> str:
     return safe[:max_length].strip("-")
 
 
+def _parse_categories(raw: str) -> list[str]:
+    """Parse Outlook categories string (comma-separated) into a list."""
+    if not raw:
+        return []
+    return [c.strip() for c in raw.split(",") if c.strip()]
+
+
+def sync_category_to_outlook(entry_id: str, category: str) -> bool:
+    """Write a category back to an Outlook item. Fails silently if COM unavailable.
+
+    This is a convenience sync — our database is the source of truth.
+    If Outlook categories are removed as a feature, this just stops working
+    and nothing else breaks.
+    """
+    if not _HAS_WIN32:
+        return False
+    try:
+        import pythoncom as _pycom
+
+        _pycom.CoInitialize()
+        try:
+            outlook = win32com_client.Dispatch("Outlook.Application")
+            namespace = outlook.GetNamespace("MAPI")
+            item = namespace.GetItemFromID(entry_id)
+            if item is None:
+                return False
+
+            existing = _parse_categories(getattr(item, "Categories", ""))
+            if category not in existing:
+                existing.append(category)
+                item.Categories = ", ".join(existing)
+                item.Save()
+            return True
+        finally:
+            _pycom.CoUninitialize()
+    except Exception as e:
+        logger.debug("Category sync failed for %s: %s", entry_id, e)
+        return False
+
+
 # =============================================================================
 # SERVICE
 # =============================================================================
@@ -341,8 +381,18 @@ class MailService:
             # 3. Extract Data
             dev, proj, proj_id = extract_project_info(subject)
 
+            # 3b. Read Outlook categories — project classifications from the user
+            outlook_categories = _parse_categories(getattr(item, "Categories", ""))
+
+            # If no project_id from subject parsing, try to match from categories
+            if not proj_id and outlook_categories:
+                proj_id = outlook_categories[0]  # First category as project ID
+
             # 4. Save index to DB (metadata only — body stays in Outlook)
-            self._save_transient_record(item, proj_id, received_dt, entry_id, account=account)
+            self._save_transient_record(
+                item, proj_id, received_dt, entry_id,
+                account=account, outlook_categories=outlook_categories,
+            )
 
             return True
 
@@ -362,7 +412,7 @@ class MailService:
 
     def _save_transient_record(
         self, item: Any, project_id: str, received_dt: datetime, entry_id: str,
-        account: str = "",
+        account: str = "", outlook_categories: list[str] | None = None,
     ) -> None:
         """Save email index record to SQLite.
 
@@ -379,6 +429,7 @@ class MailService:
             "dev": extract_project_info(subject)[0],
             "sender_name": getattr(item, "SenderName", ""),
             "has_attachments": bool(getattr(item, "Attachments", None) and item.Attachments.Count > 0),
+            "outlook_categories": outlook_categories or [],
         }
 
         db.execute(
