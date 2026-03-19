@@ -388,10 +388,27 @@ class MailService:
             if not proj_id and outlook_categories:
                 proj_id = outlook_categories[0]  # First category as project ID
 
-            # 4. Save index to DB (metadata only — body stays in Outlook)
+            # 4. Auto-triage: classify based on content + project context
+            body_preview = getattr(item, "Body", "")[:500]
+            triage_status = "pending"
+            try:
+                from autohelper.modules.mail.auto_triage import classify_email
+                result = classify_email(
+                    subject=subject,
+                    body_preview=body_preview,
+                    project_stage=None,  # Stage polling is async; set on first view
+                    project_name=proj_id or (outlook_categories[0] if outlook_categories else None),
+                    sender=sender,
+                )
+                triage_status = result.status
+            except Exception as e:
+                logger.debug("Auto-triage failed: %s", e)
+
+            # 5. Save index to DB (metadata only — body stays in Outlook)
             self._save_transient_record(
                 item, proj_id, received_dt, entry_id,
                 account=account, outlook_categories=outlook_categories,
+                triage_status=triage_status,
             )
 
             return True
@@ -413,6 +430,7 @@ class MailService:
     def _save_transient_record(
         self, item: Any, project_id: str, received_dt: datetime, entry_id: str,
         account: str = "", outlook_categories: list[str] | None = None,
+        triage_status: str = "pending",
     ) -> None:
         """Save email index record to SQLite.
 
@@ -435,10 +453,10 @@ class MailService:
         db.execute(
             """
             INSERT OR IGNORE INTO transient_emails
-                (id, subject, sender, received_at, project_id, body_preview, metadata, account)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                (id, subject, sender, received_at, project_id, body_preview, metadata, account, triage_status)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
-            (entry_id, subject, sender, received_dt, project_id, None, json.dumps(metadata), account),
+            (entry_id, subject, sender, received_dt, project_id, None, json.dumps(metadata), account, triage_status),
         )
         db.commit()
 

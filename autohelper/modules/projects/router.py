@@ -191,6 +191,49 @@ async def compose_project_email(project_id: str, body: ComposeRequest) -> dict:
         raise HTTPException(status_code=400, detail=str(e)) from e
 
 
+@router.get("/{project_id}/stage-report")
+async def project_stage_report(project_id: str) -> dict:
+    """Get live stage status from ClickUp for a provisioned project."""
+    from .stage_monitor import get_project_stage_report
+
+    project = service.get_project(project_id)
+    if project is None:
+        raise HTTPException(status_code=404, detail="Project not found")
+
+    report = await get_project_stage_report(project)
+
+    return {
+        "project_id": report.project_id,
+        "project_name": report.project_name,
+        "current_stage": report.current_stage,
+        "total_tasks": report.total_tasks,
+        "completed_tasks": report.completed_tasks,
+        "overall_progress": round(report.overall_progress, 3),
+        "stages": [
+            {
+                "number": s.number,
+                "name": s.name,
+                "total": s.total_tasks,
+                "completed": s.completed_tasks,
+                "in_progress": s.in_progress_tasks,
+                "progress": round(s.progress, 3),
+                "is_complete": s.is_complete,
+                "is_active": s.is_active,
+            }
+            for s in report.stages
+        ],
+        "templates_ready": [
+            {
+                "temp_id": t.temp_id,
+                "name": t.name,
+                "template_key": t.email_template_key,
+            }
+            for t in report.templates_ready()
+        ],
+        "error": report.error,
+    }
+
+
 @router.post("/{project_id}/provision", response_model=ProjectRecord)
 async def provision_project(project_id: str) -> ProjectRecord:
     """Create ClickUp list and tasks for a draft project."""
