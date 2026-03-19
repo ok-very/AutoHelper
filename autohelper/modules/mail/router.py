@@ -389,17 +389,24 @@ async def link_email_to_task(email_id: str, body: LinkToTaskRequest) -> dict[str
     if not token:
         raise HTTPException(status_code=400, detail="ClickUp not configured")
 
+    comment_response = None
     try:
         async with ClickUp(token) as cu:
-            await cu.comments.create(body.task_id, comment_text)
+            comment_response = await cu.comments.create(body.task_id, comment_text)
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to post comment: {e}") from e
 
-    # Store the link in metadata for auto-threading
+    # Extract ClickUp's thread identifiers from the comment response
+    clickup_comment_id = str(comment_response.get("id", "")) if comment_response else ""
+    clickup_hist_id = str(comment_response.get("hist_id", "")) if comment_response else ""
+
+    # Store the link in metadata — using ClickUp's IDs for threading, not subject lines
     metadata = email.metadata or {}
     metadata["linked_task_id"] = body.task_id
+    metadata["clickup_comment_id"] = clickup_comment_id
+    metadata["clickup_hist_id"] = clickup_hist_id
     if body.auto_thread and email.subject:
-        # Store thread key for auto-matching future emails
+        # Keep subject-based thread key as fallback
         metadata["thread_key"] = _normalize_thread_key(email.subject)
 
     db.execute(
