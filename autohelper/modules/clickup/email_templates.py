@@ -237,8 +237,16 @@ def _normalize_placeholders(text: str) -> str:
 
     def replace(match: re.Match[str]) -> str:
         raw = match.group(1)
-        normalized = PLACEHOLDER_MAP.get(raw, raw.lower().replace(" ", "_"))
-        return f"{{{{{normalized}}}}}"
+        if raw in PLACEHOLDER_MAP:
+            return f"{{{{{PLACEHOLDER_MAP[raw]}}}}}"
+        # Clean to valid identifier: lowercase, spaces/_/& → _, strip / and junk
+        slug = raw.lower()
+        slug = slug.replace(" / ", "_or_").replace("/", "_or_")
+        slug = slug.replace(" & ", "_and_").replace("&", "_and_")
+        slug = slug.replace(" ", "_")
+        slug = re.sub(r"[^a-z0-9_]", "", slug)
+        slug = re.sub(r"_+", "_", slug).strip("_")
+        return f"{{{{{slug}}}}}"
 
     return PLACEHOLDER_RE.sub(replace, text)
 

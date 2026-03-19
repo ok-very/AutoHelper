@@ -355,6 +355,23 @@ function SubjectEditor({ value, onChange }: { value: string; onChange: (v: strin
 // Rich Body Editor (contenteditable with Calibri)
 // ---------------------------------------------------------------------------
 
+// Pill CSS applied as inline styles on contenteditable spans
+const PILL_STYLE = 'display:inline-block;font-family:var(--font-mono);font-size:10px;padding:1px 8px;border-radius:10px;background:rgba(63,92,110,0.1);color:var(--accent);border:1px solid rgba(63,92,110,0.2);white-space:nowrap;cursor:default;vertical-align:baseline;margin:0 1px;line-height:1.6'
+
+function textToPills(html: string): string {
+  // Replace {{field_name}} text with pill <span> elements
+  return html.replace(/\{\{([a-z0-9_]+)\}\}/gi, (_match, field) =>
+    `<span contenteditable="false" data-merge-field="${field}" style="${PILL_STYLE}">${field}</span>`
+  )
+}
+
+function pillsToText(html: string): string {
+  // Replace pill <span> elements back to {{field_name}} text
+  return html.replace(/<span[^>]*data-merge-field="([^"]+)"[^>]*>[^<]*<\/span>/g, (_match, field) =>
+    `{{${field}}}`
+  )
+}
+
 function RichBodyEditor({ html, onChange }: { html: string; onChange: (html: string) => void }) {
   const editorRef = useRef<HTMLDivElement>(null)
   const [font, setFont] = useState('Calibri')
@@ -362,7 +379,7 @@ function RichBodyEditor({ html, onChange }: { html: string; onChange: (html: str
 
   useEffect(() => {
     if (editorRef.current && !isInternalChange.current) {
-      editorRef.current.innerHTML = html
+      editorRef.current.innerHTML = textToPills(html)
     }
     isInternalChange.current = false
   }, [html])
@@ -370,7 +387,8 @@ function RichBodyEditor({ html, onChange }: { html: string; onChange: (html: str
   const handleInput = useCallback(() => {
     if (!editorRef.current) return
     isInternalChange.current = true
-    onChange(editorRef.current.innerHTML)
+    // Convert pills back to {{text}} before saving
+    onChange(pillsToText(editorRef.current.innerHTML))
   }, [onChange])
 
   const execCommand = (cmd: string, value?: string) => {
