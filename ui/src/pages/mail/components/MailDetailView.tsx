@@ -5,6 +5,7 @@ import {
 } from 'lucide-react'
 import type { MailEmail } from '../types'
 import { MailAttachmentTable } from './MailAttachmentTable'
+import { ProjectContext } from './ProjectContext'
 
 interface MailDetailViewProps {
   email: MailEmail | null
@@ -156,6 +157,9 @@ export function MailDetailView({ email }: MailDetailViewProps) {
               </div>
             )}
           </div>
+
+          {/* Project Context — stage, templates, task linking */}
+          <ProjectContext email={email} />
 
           {/* Triage Intelligence */}
           {triage && (

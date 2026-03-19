@@ -411,11 +411,84 @@ class MailService:
                 triage_status=triage_status,
             )
 
+            # 6. Auto-thread: check if this email belongs to a linked thread
+            self._auto_thread_check(subject, sender, body_preview, entry_id)
+
             return True
 
         except Exception as e:
             logger.error(f"Failed to process email: {e}")
             return False
+
+    def _auto_thread_check(
+        self, subject: str, sender: str, body_preview: str, entry_id: str
+    ) -> None:
+        """Check if this email belongs to a thread already linked to a ClickUp task.
+
+        If a previous email with the same thread key was linked to a task,
+        auto-post this one as a follow-up comment. Runs in background, fails silently.
+        """
+        import re as _re
+
+        clean = _re.sub(r"^(re|fw|fwd)\s*:\s*", "", subject.strip(), flags=_re.IGNORECASE)
+        thread_key = clean.strip().lower()
+        if not thread_key:
+            return
+
+        try:
+            db = get_db()
+            # Find any previously linked email with the same thread key
+            rows = db.execute(
+                "SELECT metadata FROM transient_emails WHERE id != ? AND metadata LIKE ?",
+                (entry_id, f'%"thread_key": "{thread_key}"%'),
+            ).fetchall()
+
+            for row in rows:
+                try:
+                    meta = json.loads(row[0]) if row[0] else {}
+                    task_id = meta.get("linked_task_id")
+                    if task_id and meta.get("thread_key") == thread_key:
+                        # Found a linked thread — post as follow-up comment
+                        import asyncio
+                        from autohelper.config import get_settings
+                        from autohelper.modules.clickup.client import ClickUp
+
+                        token = getattr(get_settings(), "clickup_token", "")
+                        if not token:
+                            return
+
+                        comment = (
+                            f"**Thread update from {sender}**\n"
+                            f"**Subject:** {subject}\n\n"
+                            f"{(body_preview or '')[:300]}"
+                        )
+
+                        async def _post():
+                            async with ClickUp(token) as cu:
+                                await cu.comments.create(task_id, comment)
+
+                        asyncio.run(_post())
+
+                        # Update this email's metadata with the link
+                        this_meta = db.execute(
+                            "SELECT metadata FROM transient_emails WHERE id = ?", (entry_id,)
+                        ).fetchone()
+                        existing = json.loads(this_meta[0]) if this_meta and this_meta[0] else {}
+                        existing["linked_task_id"] = task_id
+                        existing["thread_key"] = thread_key
+                        existing["auto_threaded"] = True
+                        db.execute(
+                            "UPDATE transient_emails SET metadata = ? WHERE id = ?",
+                            (json.dumps(existing), entry_id),
+                        )
+                        db.commit()
+
+                        logger.info("Auto-threaded email %s to task %s", entry_id[:12], task_id)
+                        return  # Only link to one task
+                except Exception:
+                    continue
+        except Exception as e:
+            logger.debug("Auto-thread check failed: %s", e)
 
     def _is_processed(self, entry_id: str) -> bool:
         """Check if email ID is already in our DB."""

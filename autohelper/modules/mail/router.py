@@ -340,6 +340,89 @@ async def mark_informational(email_id: str) -> TriageResponse:
 
 
 # =============================================================================
+# CLICKUP TASK LINKING
+# =============================================================================
+
+
+class LinkToTaskRequest(BaseModel):
+    task_id: str
+    auto_thread: bool = True
+
+
+@router.post("/emails/{email_id}/link-task")
+async def link_email_to_task(email_id: str, body: LinkToTaskRequest) -> dict[str, Any]:
+    """Link an email to a ClickUp task by posting it as a comment.
+
+    If auto_thread is True, stores the link so future emails in the same
+    thread automatically get posted to the same task.
+    """
+    import json as _json
+
+    db = get_db()
+
+    # Fetch email record
+    row = db.execute(
+        f"SELECT {_EMAIL_COLUMNS} FROM transient_emails WHERE id = ?", (email_id,)
+    ).fetchone()
+    if not row:
+        raise HTTPException(status_code=404, detail="Email not found")
+
+    email = _row_to_email(row)
+
+    # Build comment text
+    lines = [
+        f"**Email from {email.sender}**",
+        f"**Subject:** {email.subject}",
+        f"**Received:** {email.received_at}",
+    ]
+    if email.body_preview:
+        lines.append(f"\n{email.body_preview[:500]}")
+
+    comment_text = "\n".join(lines)
+
+    # Post to ClickUp
+    from autohelper.config import get_settings
+    from autohelper.modules.clickup.client import ClickUp
+
+    settings = get_settings()
+    token = getattr(settings, "clickup_token", "")
+    if not token:
+        raise HTTPException(status_code=400, detail="ClickUp not configured")
+
+    try:
+        async with ClickUp(token) as cu:
+            await cu.comments.create(body.task_id, comment_text)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to post comment: {e}") from e
+
+    # Store the link in metadata for auto-threading
+    metadata = email.metadata or {}
+    metadata["linked_task_id"] = body.task_id
+    if body.auto_thread and email.subject:
+        # Store thread key for auto-matching future emails
+        metadata["thread_key"] = _normalize_thread_key(email.subject)
+
+    db.execute(
+        "UPDATE transient_emails SET metadata = ? WHERE id = ?",
+        (_json.dumps(metadata), email_id),
+    )
+    db.commit()
+
+    return {
+        "ok": True,
+        "task_id": body.task_id,
+        "auto_thread": body.auto_thread,
+    }
+
+
+def _normalize_thread_key(subject: str) -> str:
+    """Normalize subject to a thread key by stripping RE:/FW: prefixes."""
+    import re
+    clean = re.sub(r"^(re|fw|fwd)\s*:\s*", "", subject.strip(), flags=re.IGNORECASE)
+    return clean.strip().lower()
+
+
+# =============================================================================
 # INGESTION
 # =============================================================================
 

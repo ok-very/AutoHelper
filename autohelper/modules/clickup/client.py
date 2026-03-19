@@ -242,6 +242,23 @@ class TasksAPI:
         return all_tasks
 
 
+class CommentsAPI:
+    """Task comment operations."""
+
+    def __init__(self, client: ClickUpClient) -> None:
+        self._client = client
+
+    async def create(
+        self, task_id: str, comment_text: str, *, notify_all: bool = False
+    ) -> dict[str, Any]:
+        """Post a comment to a ClickUp task."""
+        result = await self._client.post(
+            f"/task/{task_id}/comment",
+            body={"comment_text": comment_text, "notify_all": notify_all},
+        )
+        return result
+
+
 class ListsAPI:
     """High-level list operations."""
 
@@ -337,6 +354,7 @@ class ClickUp:
         self.lists = ListsAPI(self.client)
         self.spaces = SpacesAPI(self.client)
         self.custom_fields = CustomFieldsAPI(self.client)
+        self.comments = CommentsAPI(self.client)
         self.teams = TeamsAPI(self.client)
 
     async def close(self) -> None:
