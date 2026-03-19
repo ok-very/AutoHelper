@@ -15,8 +15,7 @@ export function MailSettingsPage() {
       </header>
       <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
         <MailServiceCard />
-        <MailPathsCard />
-        <MailIngestCard />
+        <MailStorageCard />
       </div>
     </ModuleLayout>
   )
@@ -144,12 +143,13 @@ function MailServiceCard() {
 }
 
 // ---------------------------------------------------------------------------
-// File paths
+// Storage — output path, ingest path (doubles as PST drop folder), import
 // ---------------------------------------------------------------------------
 
-function MailPathsCard() {
+function MailStorageCard() {
   const [outputPath, setOutputPath] = useState('')
   const [ingestPath, setIngestPath] = useState('')
+  const [ingesting, setIngesting] = useState(false)
   const [feedback, setFeedback] = useState('')
   const [feedbackErr, setFeedbackErr] = useState(false)
 
@@ -184,12 +184,35 @@ function MailPathsCard() {
     }
   }
 
+  const handleIngest = async () => {
+    if (!ingestPath.trim()) return
+    setIngesting(true)
+    setFeedback('')
+    try {
+      const response = await fetch('/mail/ingest', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ file_path: ingestPath.trim() }),
+      })
+      const result = await response.json()
+      if (result.success) {
+        setFeedback(`Ingested ${result.count ?? 0} emails`)
+        setFeedbackErr(false)
+      } else {
+        setFeedback(result.error ?? 'Ingestion failed')
+        setFeedbackErr(true)
+      }
+    } catch {
+      setFeedback('Network error'); setFeedbackErr(true)
+    }
+    setIngesting(false)
+  }
+
   return (
     <CardShell
       icon={<FolderInput size={18} />}
       iconBg="icon-blue"
-      title="File Paths"
-      subtitle="Where polled emails are saved and where PST files are ingested from."
+      title="Storage"
     >
       <FieldRow label="Email Output">
         <div className="field-row-inline" style={{ flex: 1 }}>
@@ -200,84 +223,16 @@ function MailPathsCard() {
         </div>
       </FieldRow>
 
-      <FieldRow label="Ingest Folder">
+      <FieldRow label="PST/OST Folder">
         <div className="field-row-inline" style={{ flex: 1 }}>
           <span className="configured-value" style={{ flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
             {ingestPath || 'Not set'}
           </span>
           <button className="btn btn-sm" onClick={() => browse(setIngestPath, 'mail_ingest_path')}>Browse</button>
-        </div>
-      </FieldRow>
-
-      <FeedbackMessage message={feedback} isError={feedbackErr} />
-    </CardShell>
-  )
-}
-
-// ---------------------------------------------------------------------------
-// PST/OST import
-// ---------------------------------------------------------------------------
-
-function MailIngestCard() {
-  const [pstPath, setPstPath] = useState('')
-  const [ingesting, setIngesting] = useState(false)
-  const [feedback, setFeedback] = useState('')
-  const [feedbackErr, setFeedbackErr] = useState(false)
-
-  const browse = async () => {
-    const result = await api.config.selectFolder()
-    if (result.path) setPstPath(result.path)
-  }
-
-  const handleIngest = async () => {
-    if (!pstPath.trim()) return
-    setIngesting(true)
-    setFeedback('')
-    try {
-      const response = await fetch('/mail/ingest', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ file_path: pstPath.trim() }),
-      })
-      const result = await response.json()
-      if (result.success) {
-        setFeedback(`Ingested ${result.count ?? 0} emails`)
-        setFeedbackErr(false)
-        setPstPath('')
-      } else {
-        setFeedback(result.error ?? 'Ingestion failed')
-        setFeedbackErr(true)
-      }
-    } catch {
-      setFeedback('Network error')
-      setFeedbackErr(true)
-    }
-    setIngesting(false)
-  }
-
-  return (
-    <CardShell
-      icon={<Mail size={18} />}
-      iconBg="icon-amber"
-      title="PST/OST Import"
-      subtitle="One-time import of archived email files."
-    >
-      <FieldRow label="File">
-        <div className="field-row-inline" style={{ flex: 1 }}>
-          <input
-            type="text"
-            className="setting-input"
-            value={pstPath}
-            onChange={e => setPstPath(e.target.value)}
-            placeholder="Select or type path to .pst / .ost"
-            style={{ flex: 1 }}
-            onKeyDown={e => { if (e.key === 'Enter') handleIngest() }}
-          />
-          <button className="btn btn-sm" onClick={browse}>Browse</button>
           <button
             className="btn btn-sm btn-primary"
             onClick={handleIngest}
-            disabled={ingesting || !pstPath.trim()}
+            disabled={ingesting || !ingestPath.trim()}
           >
             {ingesting ? 'Importing...' : 'Import'}
           </button>
