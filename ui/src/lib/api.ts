@@ -180,6 +180,41 @@ export const api = {
     history: () => fetchJson<Record<string, unknown>[]>('/contacts/history'),
     testExchange: () => post('/contacts/exchange/test').then(r => r.json()),
     sync: () => post('/contacts/sync').then(r => r.json()),
+    // Hub endpoints
+    hub: {
+      search: (params: { q?: string; category?: string; staleness?: string; limit?: number; offset?: number } = {}) => {
+        const qs = new URLSearchParams()
+        if (params.q) qs.set('q', params.q)
+        if (params.category) qs.set('category', params.category)
+        if (params.staleness) qs.set('staleness', params.staleness)
+        if (params.limit) qs.set('limit', String(params.limit))
+        if (params.offset) qs.set('offset', String(params.offset))
+        return fetchJson<{ contacts: any[]; total: number; offset: number; limit: number }>(`/contacts/hub?${qs}`)
+      },
+      get: (id: string) => fetchJson<any>(`/contacts/hub/${id}`),
+      create: (data: Record<string, any>) =>
+        post('/contacts/hub', data).then(r => r.json()),
+      update: (id: string, data: Record<string, any>) =>
+        put(`/contacts/hub/${id}`, data).then(r => r.json()),
+      delete: (id: string) =>
+        fetch(`/contacts/hub/${id}`, { method: 'DELETE' }).then(r => r.json()),
+      categories: () => fetchJson<{ category: string; count: number }[]>('/contacts/hub/categories'),
+      count: () => fetchJson<{ count: number }>('/contacts/hub/count'),
+      import: (csvPath?: string, overridesPath?: string, dryRun?: boolean) =>
+        post('/contacts/hub/import', { csv_path: csvPath, overrides_path: overridesPath, dry_run: dryRun }).then(r => r.json()),
+    },
+    // Association endpoints
+    projectContacts: (projectId: string) =>
+      fetchJson<any[]>(`/contacts/projects/${projectId}/contacts`),
+    associateContact: (projectId: string, contactId: string, role: string, isPrimary = true) =>
+      post(`/contacts/projects/${projectId}/contacts`, { contact_id: contactId, role, is_primary: isPrimary }).then(r => r.json()),
+    removeAssociation: (associationId: string) =>
+      fetch(`/contacts/associations/${associationId}`, { method: 'DELETE' }).then(r => r.json()),
+    // Resolution
+    resolveSender: (email: string) =>
+      fetchJson<any>(`/contacts/resolve/sender?email=${encodeURIComponent(email)}`),
+    resolveMergeFields: (projectId: string) =>
+      fetchJson<Record<string, string>>(`/contacts/resolve/project/${projectId}/merge-fields`),
   },
 
   projects: {
