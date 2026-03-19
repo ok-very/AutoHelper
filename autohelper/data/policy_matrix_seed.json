@@ -384,5 +384,17 @@
       "s11-ownership-transfer": "Civic artworks: City ownership. Copyright retained by artist. City receives documentation and promotion license.",
       "s11-deaccessioning": "PAAC advises on deaccessioning. Council approval required. Public consultation and artist notification."
     }
+  },
+  "city_names": {
+    "burnaby": "City of Burnaby",
+    "vancouver": "City of Vancouver",
+    "north-vancouver-city": "City of North Vancouver",
+    "north-vancouver-district": "District of North Vancouver",
+    "new-westminster": "City of New Westminster",
+    "port-moody": "City of Port Moody",
+    "surrey": "City of Surrey",
+    "coquitlam": "City of Coquitlam",
+    "squamish": "District of Squamish",
+    "white-rock": "City of White Rock"
   }
 }

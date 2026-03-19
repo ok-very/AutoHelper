@@ -390,6 +390,7 @@ export interface IntakeAnswers {
   construction_cost: number
   unit_count: number | null
   floor_area_sqm: number | null
+  fsr: number | null
   requires_rezoning: boolean
   community_engagement: boolean
   indigenous_engagement: boolean
@@ -449,6 +450,7 @@ export interface CitySummary {
   policy_version: string
   contribution_rate: number
   task_override_count: number
+  has_overlay: boolean
 }
 
 export interface ProjectRecord {
@@ -487,4 +489,27 @@ export interface PolicyMatrixData {
   topics: PolicyTopic[]
   entries: Record<string, Record<string, string>>
   city_names?: Record<string, string>
+}
+
+// ---------------------------------------------------------------------------
+// Email Templates
+// ---------------------------------------------------------------------------
+
+export type RecipientRole = 'developer' | 'city' | 'artist' | 'panel' | 'internal'
+
+export interface EmailTemplateDef {
+  key: string
+  title: string
+  stage: number
+  subject: string
+  body_html: string
+  merge_fields: string[]
+  maps_to: string[]
+  order: number
+  recipient_role: RecipientRole
+}
+
+export interface EmailTemplateData {
+  version: string
+  templates: EmailTemplateDef[]
 }

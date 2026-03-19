@@ -91,6 +91,7 @@ export const MODULES: Record<string, ModuleConfig> = {
     emoji: '\u2699\uFE0F',
     pages: [
       { key: 'policy-matrix', label: 'Policy Matrix', href: '/systems/policy-matrix', icon: 'Grid3X3' },
+      { key: 'email-templates', label: 'Email Templates', href: '/systems/email-templates', icon: 'Mail' },
     ],
     status: 'active',
   },

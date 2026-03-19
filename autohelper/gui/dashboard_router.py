@@ -124,6 +124,11 @@ async def system_policy_matrix() -> FileResponse:
     return FileResponse(_ARTISTS_SERVE / "system-policy-matrix.html", media_type="text/html", headers=_NO_CACHE)
 
 
+@router.get("/systems/email-templates", include_in_schema=False)
+async def system_email_templates() -> FileResponse:
+    return FileResponse(_ARTISTS_SERVE / "system-email-templates.html", media_type="text/html", headers=_NO_CACHE)
+
+
 @router.get("/bfa-todo", include_in_schema=False)
 async def bfa_todo() -> FileResponse:
     return FileResponse(_ARTISTS_SERVE / "bfa-todo.html", media_type="text/html", headers=_NO_CACHE)

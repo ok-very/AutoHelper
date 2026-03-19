@@ -6,6 +6,7 @@ import { StatusBadge } from '@/components/settings/StatusBadge'
 import { FieldRow } from '@/components/settings/FieldRow'
 import { ConnectedValue } from '@/components/settings/ConnectedValue'
 import { FeedbackMessage } from '@/components/FeedbackMessage'
+import { WiringManifest } from '@/components/integrations'
 import { api } from '@/lib/api'
 import type { IntegrationStatus } from '@/lib/api'
 
@@ -16,6 +17,7 @@ export function ContactsSettingsPage() {
         <h1>Contacts Settings</h1>
       </header>
       <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+        <WiringManifest module="contacts" />
         <ExchangeConnectionCard />
         <ContactSyncCard />
         <SyncStatusCard />

@@ -38,6 +38,7 @@ export default defineConfig({
         'projects-new': path.resolve(__dirname, 'projects-new.html'),
         'projects-detail': path.resolve(__dirname, 'projects-detail.html'),
         'system-policy-matrix': path.resolve(__dirname, 'system-policy-matrix.html'),
+        'system-email-templates': path.resolve(__dirname, 'system-email-templates.html'),
         'bfa-todo': path.resolve(__dirname, 'bfa-todo.html'),
       },
     },

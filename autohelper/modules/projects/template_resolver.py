@@ -37,25 +37,54 @@ def load_base_template() -> dict[str, Any]:
 
 
 def load_city_overlay(city_id: str) -> CityOverlay:
-    """Load a city overlay JSON from the city_overlays directory."""
+    """Load a city overlay JSON, falling back to a default overlay for cities
+    that exist in the policy matrix but have no dedicated overlay file."""
     overlay_pkg = resources.files("autohelper") / "data" / "city_overlays" / f"{city_id}.json"
-    data = json.loads(overlay_pkg.read_text(encoding="utf-8"))
-    return CityOverlay.model_validate(data)
+    try:
+        data = json.loads(overlay_pkg.read_text(encoding="utf-8"))
+        return CityOverlay.model_validate(data)
+    except (FileNotFoundError, TypeError):
+        # No overlay file — build a default overlay using policy matrix city_names
+        from .policy_matrix import get_policy_matrix_store
+
+        pm = get_policy_matrix_store().load()
+        city_name = pm.city_names.get(city_id, city_id.replace("-", " ").title())
+        return CityOverlay(city_id=city_id, city_name=city_name)
 
 
 def list_available_cities() -> list[CityOverlay]:
-    """List all available city overlays."""
+    """List all available cities — overlay files merged with policy matrix cities.
+
+    Cities with dedicated overlay JSON files get their full customization.
+    Cities that exist in the policy matrix but have no overlay get a default overlay
+    with base template settings and their policy notes still attached during resolution.
+    """
+    # 1. Load overlay files
     overlays_dir = resources.files("autohelper") / "data" / "city_overlays"
-    cities: list[CityOverlay] = []
+    by_id: dict[str, CityOverlay] = {}
     for item in overlays_dir.iterdir():
         name = getattr(item, "name", str(item))
         if name.endswith(".json"):
             try:
                 data = json.loads(item.read_text(encoding="utf-8"))
-                cities.append(CityOverlay.model_validate(data))
+                overlay = CityOverlay.model_validate(data)
+                by_id[overlay.city_id] = overlay
             except Exception:
                 logger.warning("Failed to load city overlay: %s", name)
-    return cities
+
+    # 2. Merge in cities from the policy matrix that don't have overlays
+    try:
+        from .policy_matrix import get_policy_matrix_store
+
+        pm = get_policy_matrix_store().load()
+        for city_id in pm.entries:
+            if city_id not in by_id:
+                city_name = pm.city_names.get(city_id, city_id.replace("-", " ").title())
+                by_id[city_id] = CityOverlay(city_id=city_id, city_name=city_name)
+    except Exception:
+        logger.debug("Could not load policy matrix for city list merge")
+
+    return sorted(by_id.values(), key=lambda o: o.city_name)
 
 
 def _tasks_to_resolved(raw_tasks: list[dict[str, Any]]) -> list[ResolvedTask]:

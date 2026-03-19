@@ -2,7 +2,6 @@ import { Stack, Inline, Select, Button, Spinner } from '@ui/atoms'
 import { RadioGroup } from '@ui/atoms/RadioGroup'
 import { ChevronRight } from 'lucide-react'
 import { useIntake } from '../IntakeContext'
-import { formatPercent } from '../utils'
 import type { StepProps } from './StepProps'
 
 const PROJECT_TYPE_OPTIONS = [
@@ -36,17 +35,17 @@ export function Step1Municipality({ onNext }: StepProps) {
             onChange={(v) => setMunicipality(v ?? '')}
             data={cities.map((c) => ({
               value: c.city_id,
-              label: `${c.city_name} (v${c.policy_version})`,
+              label: c.city_name,
             }))}
             placeholder="Select a municipality..."
           />
         )}
         {selectedCity && (
-          <p className="text-xs text-ws-text-secondary">
-            Contribution rate: {formatPercent(selectedCity.contribution_rate)}
-            {selectedCity.task_override_count > 0 && (
-              <> &middot; {selectedCity.task_override_count} task override{selectedCity.task_override_count !== 1 ? 's' : ''}</>
-            )}
+          <p className="text-xs text-ws-text-secondary" style={{ fontFamily: 'var(--font-mono)', fontSize: '11px' }}>
+            {selectedCity.has_overlay
+              ? `Base template + ${selectedCity.task_override_count} city-specific task${selectedCity.task_override_count !== 1 ? 's' : ''}`
+              : 'Base template with policy notes from matrix'
+            }
           </p>
         )}
       </div>

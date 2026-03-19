@@ -56,7 +56,7 @@ def _get_folder_id() -> str:
 
 
 def list_cities() -> list[CitySummary]:
-    """Return summary of all available city overlays."""
+    """Return summary of all available cities (overlay files + policy matrix)."""
     overlays = list_available_cities()
     return [
         CitySummary(
@@ -65,6 +65,7 @@ def list_cities() -> list[CitySummary]:
             policy_version=o.policy_version,
             contribution_rate=o.budget_rules.contribution_rate,
             task_override_count=len(o.task_overrides),
+            has_overlay=len(o.task_overrides) > 0 or o.policy_version != "current",
         )
         for o in overlays
     ]

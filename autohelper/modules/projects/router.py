@@ -5,7 +5,7 @@ from __future__ import annotations
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 
-from .types import CityOverlay, IntakeAnswers, PolicyMatrixData, PolicyTopic, ProjectRecord, ResolvedManifest, CitySummary
+from .types import CityOverlay, EmailTemplateDef, EmailTemplateData, IntakeAnswers, PolicyMatrixData, PolicyTopic, ProjectRecord, ResolvedManifest, CitySummary
 from . import service
 
 router = APIRouter(prefix="/api/projects", tags=["projects"])
@@ -86,6 +86,58 @@ async def import_policy_matrix(body: ImportRequest) -> PolicyMatrixData:
         return service.import_policy_matrix(body.path)
     except Exception as e:
         raise HTTPException(status_code=400, detail=str(e)) from e
+
+
+# ── Email template endpoints ──────────────────────────────────────
+
+
+@router.get("/email-templates", response_model=EmailTemplateData)
+async def get_email_templates() -> EmailTemplateData:
+    """Get all email templates."""
+    from .email_template_store import get_email_template_store
+
+    return get_email_template_store().load()
+
+
+@router.put("/email-templates", response_model=EmailTemplateData)
+async def save_email_templates(data: EmailTemplateData) -> EmailTemplateData:
+    """Save full email template data."""
+    from .email_template_store import get_email_template_store
+
+    get_email_template_store().save(data)
+    return data
+
+
+class TemplateUpdate(BaseModel):
+    key: str
+    title: str | None = None
+    subject: str | None = None
+    body_html: str | None = None
+    recipient_role: str | None = None
+    maps_to: list[str] | None = None
+    stage: int | None = None
+
+
+@router.put("/email-templates/template")
+async def update_email_template(body: TemplateUpdate) -> dict:
+    """Update a single email template."""
+    from .email_template_store import get_email_template_store
+
+    updates = {k: v for k, v in body.model_dump().items() if k != "key" and v is not None}
+    found = get_email_template_store().update_template(body.key, updates)
+    if not found:
+        raise HTTPException(status_code=404, detail=f"Template '{body.key}' not found")
+    return {"ok": True}
+
+
+@router.post("/email-templates/seed", response_model=EmailTemplateData)
+async def seed_email_templates() -> EmailTemplateData:
+    """Re-seed from markdown files (overwrites current data)."""
+    from .email_template_store import get_email_template_store, seed_from_markdown
+
+    data = seed_from_markdown()
+    get_email_template_store().save(data)
+    return data
 
 
 # ── Project CRUD ──────────────────────────────────────────────────

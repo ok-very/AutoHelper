@@ -10,6 +10,7 @@ export function Step3Financials({ onNext, onBack }: StepProps) {
     constructionCost, setConstructionCost,
     unitCount, setUnitCount,
     floorArea, setFloorArea,
+    fsr, setFsr,
     preview, previewLoading, canAdvance,
   } = useIntake()
 
@@ -24,22 +25,38 @@ export function Step3Financials({ onNext, onBack }: StepProps) {
         onChange={(e) => setConstructionCost(e.target.value)}
         placeholder="e.g. 50000000"
       />
-      <TextInput
-        label="Unit Count"
-        type="number"
-        min={0}
-        value={unitCount}
-        onChange={(e) => setUnitCount(e.target.value)}
-        placeholder="e.g. 200"
-      />
-      <TextInput
-        label="Floor Area (sqm)"
-        type="number"
-        min={0}
-        value={floorArea}
-        onChange={(e) => setFloorArea(e.target.value)}
-        placeholder="e.g. 15000"
-      />
+
+      <h3 className="text-xs font-semibold text-ws-text-secondary uppercase tracking-wide">
+        Development Application Data
+      </h3>
+
+      <div className="grid grid-cols-3 gap-4">
+        <TextInput
+          label="FSR"
+          type="number"
+          min={0}
+          step={0.01}
+          value={fsr}
+          onChange={(e) => setFsr(e.target.value)}
+          placeholder="e.g. 5.2"
+        />
+        <TextInput
+          label="Units"
+          type="number"
+          min={0}
+          value={unitCount}
+          onChange={(e) => setUnitCount(e.target.value)}
+          placeholder="e.g. 200"
+        />
+        <TextInput
+          label="Floor Area (sqm)"
+          type="number"
+          min={0}
+          value={floorArea}
+          onChange={(e) => setFloorArea(e.target.value)}
+          placeholder="e.g. 15000"
+        />
+      </div>
 
       <BudgetCard budget={preview?.budget ?? null} loading={previewLoading} />
 

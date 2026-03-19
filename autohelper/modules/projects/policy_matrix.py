@@ -189,10 +189,25 @@ class PolicyMatrixStore:
         try:
             with open(self.path, encoding="utf-8") as f:
                 data = json.load(f)
-            return PolicyMatrixData.model_validate(data)
+            pm = PolicyMatrixData.model_validate(data)
+            # Backfill city_names from seed if runtime file predates the field
+            if not pm.city_names:
+                pm.city_names = self._load_seed_city_names()
+            return pm
         except Exception as e:
             logger.error("Failed to load policy matrix: %s", e)
             return PolicyMatrixData()
+
+    @staticmethod
+    def _load_seed_city_names() -> dict[str, str]:
+        """Load city_names from the bundled seed data."""
+        try:
+            seed = resources.files("autohelper.data").joinpath("policy_matrix_seed.json")
+            with resources.as_file(seed) as path:
+                data = json.loads(path.read_text(encoding="utf-8"))
+                return data.get("city_names", {})
+        except Exception:
+            return {}
 
     def save(self, data: PolicyMatrixData) -> None:
         dirpath = self.path.parent

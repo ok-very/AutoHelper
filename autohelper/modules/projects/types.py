@@ -41,6 +41,7 @@ class IntakeAnswers(BaseModel):
     construction_cost: float = 0.0
     unit_count: int | None = None
     floor_area_sqm: float | None = None
+    fsr: float | None = None
     requires_rezoning: bool = False
     community_engagement: bool = False
     indigenous_engagement: bool = False
@@ -125,6 +126,7 @@ class CitySummary(BaseModel):
     policy_version: str
     contribution_rate: float
     task_override_count: int
+    has_overlay: bool = True
 
 
 # ── Project record ────────────────────────────────────────────────
@@ -230,6 +232,30 @@ class PolicyNote(BaseModel):
 
     topic: str
     text: str
+
+
+# ── Email templates ──────────────────────────────────────────────
+
+
+class EmailTemplateDef(BaseModel):
+    """A single email template definition."""
+
+    key: str  # "01.1", "02.3", etc.
+    title: str  # "Request Project Documents from Developer"
+    stage: int  # BFA stage number
+    subject: str  # Subject with {{placeholders}}
+    body_html: str  # Rich HTML body with {{placeholders}}, Calibri font
+    merge_fields: list[str] = Field(default_factory=list)
+    maps_to: list[str] = Field(default_factory=list)  # task temp_ids
+    order: int = 0
+    recipient_role: str = "developer"  # developer, city, artist, panel, internal
+
+
+class EmailTemplateData(BaseModel):
+    """Full email template collection."""
+
+    version: str = "1.0"
+    templates: list[EmailTemplateDef] = Field(default_factory=list)
 
 
 # ── City overlay (full schema) ────────────────────────────────────

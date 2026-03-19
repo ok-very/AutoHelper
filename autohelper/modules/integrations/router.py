@@ -80,6 +80,7 @@ async def integrations_status() -> dict[str, Any]:
             "source": _source_of("clickup_token", settings, raw_cfg),
             "token_hint": _token_hint(token_val),
             "oauth_available": bool(getattr(settings, "clickup_client_id", "")),
+            "redirect_uri": getattr(settings, "clickup_redirect_uri", "") or "",
             "workspace_id": _field_status("clickup_workspace_id", settings, raw_cfg),
             "space_id": _field_status("clickup_space_id", settings, raw_cfg),
             "list_id": _field_status("clickup_list_id", settings, raw_cfg),
@@ -88,11 +89,14 @@ async def integrations_status() -> dict[str, Any]:
             "oauth_available": bool(getattr(settings, "google_client_id", "")),
             "configured": bool(raw_cfg.get("google_token", "")),
             "account": raw_cfg.get("google_account_name", ""),
+            "redirect_uri": getattr(settings, "google_redirect_uri", "") or "",
+            "has_refresh_token": bool(raw_cfg.get("google_refresh_token", "")),
         },
         "monday": {
             "oauth_available": bool(getattr(settings, "monday_client_id", "")),
             "configured": bool(raw_cfg.get("monday_token", "")),
             "account": raw_cfg.get("monday_account_name", ""),
+            "redirect_uri": getattr(settings, "monday_redirect_uri", "") or "",
         },
         "exchange": {
             "configured": bool(getattr(settings, "exchange_email", "")),

@@ -9,6 +9,8 @@ import type {
   ScanStatus,
   Lexicon,
   PolicyMatrixData,
+  EmailTemplateData,
+  EmailTemplateDef,
 } from './types'
 
 const API = '/artists'
@@ -47,6 +49,8 @@ export interface OAuthProviderStatus {
   oauth_available?: boolean
   configured: boolean
   account?: string
+  redirect_uri?: string
+  has_refresh_token?: boolean
 }
 
 export interface IntegrationStatus {
@@ -55,6 +59,7 @@ export interface IntegrationStatus {
     source: 'env' | 'config' | 'none'
     token_hint?: string | null
     oauth_available?: boolean
+    redirect_uri?: string
     workspace_id: IntegrationFieldStatus
     space_id: IntegrationFieldStatus
     list_id: IntegrationFieldStatus
@@ -207,6 +212,13 @@ export const api = {
         put('/api/projects/policy-matrix/entry', { city_id: cityId, topic_id: topicId, text }),
       importXlsx: (path: string) =>
         post('/api/projects/policy-matrix/import', { path }).then(r => r.json()),
+    },
+    emailTemplates: {
+      get: () => fetchJson<EmailTemplateData>('/api/projects/email-templates'),
+      save: (data: EmailTemplateData) => put('/api/projects/email-templates', data),
+      updateTemplate: (tmpl: Partial<EmailTemplateDef> & { key: string }) =>
+        put('/api/projects/email-templates/template', tmpl),
+      seed: () => post('/api/projects/email-templates/seed').then(r => r.json() as Promise<EmailTemplateData>),
     },
   },
 

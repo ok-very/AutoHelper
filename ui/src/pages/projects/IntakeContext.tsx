@@ -8,6 +8,44 @@ import type {
 } from '@/lib/types'
 
 // ---------------------------------------------------------------------------
+// Session persistence — survives browser back/forward, clears on submit/cancel
+// ---------------------------------------------------------------------------
+
+const SESSION_KEY = 'intake-wizard-draft'
+
+interface DraftState {
+  step: number
+  municipality: string
+  projectType: ProjectType | null
+  projectName: string
+  developerName: string
+  neighbourhood: string
+  constructionCost: string
+  unitCount: string
+  floorArea: string
+  fsr: string
+  communityEngagement: boolean
+  indigenousEngagement: boolean
+  requiresRezoning: boolean
+  civicContribution: boolean
+}
+
+function loadDraft(): Partial<DraftState> {
+  try {
+    const raw = sessionStorage.getItem(SESSION_KEY)
+    return raw ? JSON.parse(raw) : {}
+  } catch { return {} }
+}
+
+function saveDraft(state: DraftState) {
+  try { sessionStorage.setItem(SESSION_KEY, JSON.stringify(state)) } catch {}
+}
+
+export function clearIntakeDraft() {
+  try { sessionStorage.removeItem(SESSION_KEY) } catch {}
+}
+
+// ---------------------------------------------------------------------------
 // Context value
 // ---------------------------------------------------------------------------
 
@@ -29,6 +67,8 @@ interface IntakeContextValue {
   setUnitCount: (v: string) => void
   floorArea: string
   setFloorArea: (v: string) => void
+  fsr: string
+  setFsr: (v: string) => void
   communityEngagement: boolean
   setCommunityEngagement: (v: boolean) => void
   indigenousEngagement: boolean
@@ -75,26 +115,29 @@ export function useIntake(): IntakeContextValue {
 // ---------------------------------------------------------------------------
 
 export function IntakeContextProvider({ children }: { children: React.ReactNode }) {
-  const [step, setStep] = useState(1)
+  const draft = useRef(loadDraft()).current
+
+  const [step, setStep] = useState(draft.step ?? 1)
 
   // City data
   const [cities, setCities] = useState<CitySummary[]>([])
   const [citiesLoading, setCitiesLoading] = useState(true)
   const [cityOverlay, setCityOverlay] = useState<{ neighbourhoods?: string[] } | null>(null)
 
-  // Form state
-  const [municipality, setMunicipality] = useState('')
-  const [projectType, setProjectType] = useState<ProjectType | null>(null)
-  const [projectName, setProjectName] = useState('')
-  const [developerName, setDeveloperName] = useState('')
-  const [neighbourhood, setNeighbourhood] = useState('')
-  const [constructionCost, setConstructionCost] = useState('')
-  const [unitCount, setUnitCount] = useState('')
-  const [floorArea, setFloorArea] = useState('')
-  const [communityEngagement, setCommunityEngagement] = useState(false)
-  const [indigenousEngagement, setIndigenousEngagement] = useState(false)
-  const [requiresRezoning, setRequiresRezoning] = useState(false)
-  const [civicContribution, setCivicContribution] = useState(true)
+  // Form state — initialized from session draft
+  const [municipality, setMunicipality] = useState(draft.municipality ?? '')
+  const [projectType, setProjectType] = useState<ProjectType | null>(draft.projectType ?? null)
+  const [projectName, setProjectName] = useState(draft.projectName ?? '')
+  const [developerName, setDeveloperName] = useState(draft.developerName ?? '')
+  const [neighbourhood, setNeighbourhood] = useState(draft.neighbourhood ?? '')
+  const [constructionCost, setConstructionCost] = useState(draft.constructionCost ?? '')
+  const [unitCount, setUnitCount] = useState(draft.unitCount ?? '')
+  const [floorArea, setFloorArea] = useState(draft.floorArea ?? '')
+  const [fsr, setFsr] = useState(draft.fsr ?? '')
+  const [communityEngagement, setCommunityEngagement] = useState(draft.communityEngagement ?? false)
+  const [indigenousEngagement, setIndigenousEngagement] = useState(draft.indigenousEngagement ?? false)
+  const [requiresRezoning, setRequiresRezoning] = useState(draft.requiresRezoning ?? false)
+  const [civicContribution, setCivicContribution] = useState(draft.civicContribution ?? true)
 
   // Preview state
   const [preview, setPreview] = useState<ResolvedManifest | null>(null)
@@ -104,6 +147,19 @@ export function IntakeContextProvider({ children }: { children: React.ReactNode 
   // Submit state
   const [submitting, setSubmitting] = useState(false)
   const [submitError, setSubmitError] = useState<string | null>(null)
+
+  // Persist to session on every form change
+  useEffect(() => {
+    saveDraft({
+      step, municipality, projectType, projectName, developerName, neighbourhood,
+      constructionCost, unitCount, floorArea, fsr,
+      communityEngagement, indigenousEngagement, requiresRezoning, civicContribution,
+    })
+  }, [
+    step, municipality, projectType, projectName, developerName, neighbourhood,
+    constructionCost, unitCount, floorArea, fsr,
+    communityEngagement, indigenousEngagement, requiresRezoning, civicContribution,
+  ])
 
   // Derived
   const selectedCity = useMemo(
@@ -144,6 +200,7 @@ export function IntakeContextProvider({ children }: { children: React.ReactNode 
     construction_cost: parseFloat(constructionCost) || 0,
     unit_count: unitCount ? parseInt(unitCount, 10) : null,
     floor_area_sqm: floorArea ? parseFloat(floorArea) : null,
+    fsr: fsr ? parseFloat(fsr) : null,
     requires_rezoning: requiresRezoning,
     community_engagement: communityEngagement,
     indigenous_engagement: indigenousEngagement,
@@ -152,7 +209,7 @@ export function IntakeContextProvider({ children }: { children: React.ReactNode 
     },
   }), [
     municipality, projectType, projectName, developerName, neighbourhood,
-    constructionCost, unitCount, floorArea, requiresRezoning,
+    constructionCost, unitCount, floorArea, fsr, requiresRezoning,
     communityEngagement, indigenousEngagement, civicContribution,
   ])
 
@@ -197,6 +254,7 @@ export function IntakeContextProvider({ children }: { children: React.ReactNode 
       if (provision && created.id) {
         await api.projects.provision(created.id)
       }
+      clearIntakeDraft()
       window.location.href = `/projects/${created.id}`
     } catch (err: any) {
       setSubmitError(err.message ?? 'Failed to create project')
@@ -213,6 +271,7 @@ export function IntakeContextProvider({ children }: { children: React.ReactNode 
     constructionCost, setConstructionCost,
     unitCount, setUnitCount,
     floorArea, setFloorArea,
+    fsr, setFsr,
     communityEngagement, setCommunityEngagement,
     indigenousEngagement, setIndigenousEngagement,
     requiresRezoning, setRequiresRezoning,
@@ -224,7 +283,7 @@ export function IntakeContextProvider({ children }: { children: React.ReactNode 
     step, setStep, canAdvance,
   }), [
     municipality, projectType, projectName, developerName, neighbourhood,
-    constructionCost, unitCount, floorArea,
+    constructionCost, unitCount, floorArea, fsr,
     communityEngagement, indigenousEngagement, requiresRezoning, civicContribution,
     cities, citiesLoading, selectedCity, cityOverlay,
     preview, previewLoading, submitting, submitError,

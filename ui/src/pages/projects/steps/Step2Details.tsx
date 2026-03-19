@@ -1,4 +1,4 @@
-import { Stack, Inline, Select, Button } from '@ui/atoms'
+import { Stack, Inline, Button } from '@ui/atoms'
 import { TextInput } from '@ui/atoms/TextInput'
 import { ChevronLeft, ChevronRight } from 'lucide-react'
 import { useIntake } from '../IntakeContext'
@@ -29,15 +29,27 @@ export function Step2Details({ onNext, onBack }: StepProps) {
         onChange={(e) => setDeveloperName(e.target.value)}
         placeholder="e.g. Polygon Homes"
       />
-      {neighbourhoods.length > 0 && (
-        <Select
-          label="Neighbourhood"
-          value={neighbourhood || null}
-          onChange={(v) => setNeighbourhood(v ?? '')}
-          data={neighbourhoods.map((n) => ({ value: n, label: n }))}
-          placeholder="None"
+      <div className="flex flex-col gap-1">
+        <label htmlFor="neighbourhood" className="text-sm font-medium text-ws-fg">
+          Neighbourhood
+        </label>
+        <input
+          id="neighbourhood"
+          type="text"
+          list="neighbourhood-suggestions"
+          value={neighbourhood}
+          onChange={(e) => setNeighbourhood(e.target.value)}
+          placeholder={neighbourhoods.length > 0 ? 'Select or type a neighbourhood' : 'Type a neighbourhood'}
+          className="w-full rounded-lg border transition-colors bg-ws-panel-bg font-sans px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-ws-accent focus:border-ws-accent border-ws-panel-border"
         />
-      )}
+        {neighbourhoods.length > 0 && (
+          <datalist id="neighbourhood-suggestions">
+            {neighbourhoods.map((n) => (
+              <option key={n} value={n} />
+            ))}
+          </datalist>
+        )}
+      </div>
 
       <Inline justify="between">
         <Button

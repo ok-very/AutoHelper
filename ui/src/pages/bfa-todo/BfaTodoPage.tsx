@@ -1,10 +1,12 @@
 import { useState, useEffect, useMemo, useCallback } from 'react'
-import { Play, Send, Upload } from 'lucide-react'
+import { Play, Send } from 'lucide-react'
 import { Badge } from '@ui/atoms'
 import { ModuleLayout } from '@/components/ModuleLayout'
 import { FeedbackMessage } from '@/components/FeedbackMessage'
+import { WiringManifest, diagnoseProvider } from '@/components/integrations'
+import { useIntegrationStatus } from '@/hooks/useIntegrationStatus'
+import { useOAuthConnect } from '@/hooks/useOAuthConnect'
 import { api } from '@/lib/api'
-import type { IntegrationStatus } from '@/lib/api'
 
 import { FilterBar } from './components/FilterBar'
 import { PreambleSection } from './components/PreambleSection'
@@ -30,33 +32,6 @@ function distinct<T>(arr: T[]): T[] {
   return Array.from(new Set(arr)).sort() as T[]
 }
 
-function openOAuthPopup(
-  fetchAuth: () => Promise<{ url: string }>,
-  messageType: string,
-): Promise<boolean> {
-  return new Promise(async (resolve) => {
-    try {
-      const { url } = await fetchAuth()
-      const popup = window.open(url, `${messageType}-popup`, 'width=600,height=700,popup=yes')
-      const handler = (e: MessageEvent) => {
-        if (e.data?.type === messageType) {
-          window.removeEventListener('message', handler)
-          resolve(e.data.ok === true)
-        }
-      }
-      window.addEventListener('message', handler)
-      const timer = setInterval(() => {
-        if (popup && popup.closed) {
-          clearInterval(timer)
-          window.removeEventListener('message', handler)
-          setTimeout(() => resolve(false), 300)
-        }
-      }, 500)
-    } catch {
-      resolve(false)
-    }
-  })
-}
 
 // ---------------------------------------------------------------------------
 // Main Page
@@ -97,7 +72,8 @@ export function BfaTodoPage() {
   const [preambleExpanded, setPreambleExpanded] = useState<Set<string>>(new Set())
 
   // Integration status + GDocs
-  const [integrations, setIntegrations] = useState<IntegrationStatus | null>(null)
+  const { status: integrations, refresh: refreshIntegrations } = useIntegrationStatus()
+  const oauth = useOAuthConnect(refreshIntegrations)
   const [memberMap, setMemberMap] = useState<Record<string, string>>({})
 
   const load = useCallback(() => {
@@ -117,7 +93,6 @@ export function BfaTodoPage() {
   useEffect(load, [load])
 
   useEffect(() => {
-    api.integrations.status().then(setIntegrations).catch(() => {})
     api.config.get().then(cfg => {
       if (cfg.bfa_todo_doc_id) setDocId(String(cfg.bfa_todo_doc_id))
     }).catch(() => {})
@@ -134,16 +109,6 @@ export function BfaTodoPage() {
       }).catch(() => {})
     }
   }, [integrations?.clickup.configured])
-
-  useEffect(() => {
-    const handler = (e: MessageEvent) => {
-      if (e.data?.ok && typeof e.data?.type === 'string' && e.data.type.endsWith('-oauth')) {
-        api.integrations.status().then(setIntegrations).catch(() => {})
-      }
-    }
-    window.addEventListener('message', handler)
-    return () => window.removeEventListener('message', handler)
-  }, [])
 
   // Derived filter options
   const phases = useMemo(() => distinct(projects.map(p => p.phase).filter(Boolean)), [projects])
@@ -223,23 +188,6 @@ export function BfaTodoPage() {
     setImportingHtml(false)
   }
 
-  const handleGoogleConnect = async () => {
-    const ok = await openOAuthPopup(api.google.auth, 'google-oauth')
-    if (ok) { setFeedback('Connected to Google'); setFeedbackErr(false); api.integrations.status().then(setIntegrations).catch(() => {}) }
-    else { setFeedback('Google connection cancelled or failed'); setFeedbackErr(true) }
-  }
-
-  const handleGoogleDisconnect = async () => {
-    try {
-      await api.config.save({ google_token: '', google_account_name: '' })
-      setFeedback('Disconnected from Google'); setFeedbackErr(false)
-      api.integrations.status().then(setIntegrations).catch(() => {})
-    } catch { setFeedback('Disconnect failed'); setFeedbackErr(true) }
-  }
-
-  const googleConnected = integrations?.google.configured ?? false
-  const googleAccount = integrations?.google.account ?? ''
-
   return (
     <ModuleLayout module="bfa-todo" activePage="overview">
       <div className="flex flex-col gap-3" style={{ height: 'calc(100vh - 48px)' }}>
@@ -247,35 +195,32 @@ export function BfaTodoPage() {
           <p className="text-sm text-ws-text-secondary py-8 text-center">Loading...</p>
         ) : (
           <>
-            {/* Source ingestion bar */}
-            <div style={{ border: '1px solid var(--border)', background: 'var(--bg-surface)', padding: '10px 14px', fontFamily: 'var(--font-sans)' }}>
-              <div className="flex flex-wrap items-center gap-3" style={{ fontSize: '13px' }}>
-                <span style={{ fontWeight: 600, color: 'var(--fg-secondary)', fontSize: '11px', textTransform: 'uppercase', letterSpacing: '0.04em' }}>Source</span>
-                <select className="filter-select" value={source} onChange={e => setSource(e.target.value as SourceType)} style={{ fontSize: '12px' }}>
-                  <option value="bfa-html">BFA HTML</option>
-                  <option value="monday-excel">Monday Excel</option>
-                  <option value="clickup" disabled>ClickUp (coming soon)</option>
-                </select>
+            <WiringManifest module="bfa-todo" status={integrations} />
 
-                {source === 'bfa-html' && (
-                  <>
-                    <input type="text" className="setting-input" value={htmlPath} onChange={e => setHtmlPath(e.target.value)} placeholder="Path to BFA HTML data directory..." style={{ width: '340px', fontSize: '12px' }} onKeyDown={e => { if (e.key === 'Enter') handleImportHtml() }} />
-                    <button className="btn btn-sm btn-primary" onClick={handleImportHtml} disabled={importingHtml || !htmlPath.trim()}>
-                      {importingHtml ? 'Importing...' : 'Re-import'}
-                    </button>
-                  </>
-                )}
-
-                {source === 'monday-excel' && (
-                  <>
-                    <Upload size={14} style={{ color: 'var(--fg-secondary)', flexShrink: 0 }} />
-                    <input type="text" className="setting-input" value={excelPath} onChange={e => setExcelPath(e.target.value)} placeholder="Path to Monday .xlsx export..." style={{ width: '300px', fontSize: '12px' }} onKeyDown={e => { if (e.key === 'Enter') handleImportExcel() }} />
-                    <button className="btn btn-sm btn-primary" onClick={handleImportExcel} disabled={importingExcel || !excelPath.trim()}>
-                      {importingExcel ? 'Importing...' : 'Import'}
-                    </button>
-                  </>
-                )}
-              </div>
+            {/* Source endpoint */}
+            <div className="endpoint-bar">
+              <span className="endpoint-label">Source</span>
+              <select className="endpoint-select" value={source} onChange={e => setSource(e.target.value as SourceType)}>
+                <option value="bfa-html">BFA HTML</option>
+                <option value="monday-excel">Monday Excel</option>
+                <option value="clickup" disabled>ClickUp (coming soon)</option>
+              </select>
+              {source === 'bfa-html' && (
+                <>
+                  <input type="text" className="endpoint-input" value={htmlPath} onChange={e => setHtmlPath(e.target.value)} placeholder="Path to BFA HTML data directory..." onKeyDown={e => { if (e.key === 'Enter') handleImportHtml() }} />
+                  <button className="btn btn-sm btn-primary" onClick={handleImportHtml} disabled={importingHtml || !htmlPath.trim()}>
+                    {importingHtml ? 'Importing...' : 'Re-import'}
+                  </button>
+                </>
+              )}
+              {source === 'monday-excel' && (
+                <>
+                  <input type="text" className="endpoint-input" value={excelPath} onChange={e => setExcelPath(e.target.value)} placeholder="Path to Monday .xlsx export..." onKeyDown={e => { if (e.key === 'Enter') handleImportExcel() }} />
+                  <button className="btn btn-sm btn-primary" onClick={handleImportExcel} disabled={importingExcel || !excelPath.trim()}>
+                    {importingExcel ? 'Importing...' : 'Import'}
+                  </button>
+                </>
+              )}
             </div>
 
             <FilterBar
@@ -336,48 +281,44 @@ export function BfaTodoPage() {
               )}
             </div>
 
-            {/* Action bar */}
-            <div className="flex flex-wrap items-center gap-3" style={{ paddingTop: '4px', fontFamily: 'var(--font-sans)' }}>
+            {/* Process + Target endpoint */}
+            <div className="endpoint-bar">
               <button className="btn btn-sm" onClick={handleRender} disabled={rendering}>
                 <Play size={12} />
                 {rendering ? 'Rendering...' : 'Render All'}
               </button>
 
-              <span style={{ width: '1px', height: '20px', background: 'var(--border)' }} />
+              <span className="endpoint-divider" />
 
-              <span style={{ fontWeight: 600, color: 'var(--fg-secondary)', fontSize: '11px', textTransform: 'uppercase', letterSpacing: '0.04em' }}>Target</span>
-              <select className="filter-select" value={target} onChange={e => setTarget(e.target.value as TargetType)} style={{ fontSize: '12px' }}>
+              <span className="endpoint-label">Target</span>
+              <select className="endpoint-select" value={target} onChange={e => setTarget(e.target.value as TargetType)}>
                 <option value="none">None (local only)</option>
                 <option value="google-docs">Google Docs</option>
                 <option value="clickup" disabled>ClickUp (coming soon)</option>
               </select>
 
-              {target === 'google-docs' && (
-                <>
-                  {googleConnected ? (
-                    <>
-                      <span style={{ fontSize: '11px', color: 'var(--fg-secondary)', background: 'var(--bg-surface)', padding: '2px 8px', border: '1px solid var(--border)', borderRadius: '2px' }}>
-                        {googleAccount || 'Google connected'}
-                      </span>
-                      <button className="btn btn-sm" onClick={handleGoogleDisconnect} style={{ fontSize: '11px' }}>Disconnect</button>
-                    </>
-                  ) : integrations?.google.oauth_available ? (
-                    <button className="btn btn-sm btn-primary" onClick={handleGoogleConnect}>Connect Google</button>
-                  ) : (
-                    <span style={{ fontSize: '11px', color: 'var(--fg-disabled)', fontStyle: 'italic' }}>Google not configured</span>
-                  )}
-
-                  {googleConnected && (
-                    <>
-                      <input type="text" className="setting-input" value={docId} onChange={e => setDocId(e.target.value)} placeholder="Google Doc ID..." style={{ width: '240px', fontSize: '12px', borderColor: !docId.trim() ? 'var(--color-warning)' : undefined }} onKeyDown={e => { if (e.key === 'Enter') handleDeploySelected() }} />
-                      <button className="btn btn-sm btn-primary" onClick={handleDeploySelected} disabled={deploying || !docId.trim() || selected.size === 0}>
-                        <Send size={12} />
-                        {deploying ? 'Deploying...' : `Deploy Selected (${selected.size})`}
+              {target === 'google-docs' && (() => {
+                const diag = diagnoseProvider('google', integrations)
+                return (
+                  <>
+                    <span className="endpoint-status">{diag.summary}</span>
+                    {!diag.healthy && integrations?.google.oauth_available && (
+                      <button className="btn btn-sm btn-primary" onClick={() => oauth.connect('Google', api.google.auth, 'google-oauth')}>
+                        Connect
                       </button>
-                    </>
-                  )}
-                </>
-              )}
+                    )}
+                    {diag.healthy && (
+                      <>
+                        <input type="text" className="endpoint-input" value={docId} onChange={e => setDocId(e.target.value)} placeholder="Doc ID" style={{ width: '200px', borderColor: !docId.trim() ? 'var(--color-warning)' : undefined }} onKeyDown={e => { if (e.key === 'Enter') handleDeploySelected() }} />
+                        <button className="btn btn-sm btn-primary" onClick={handleDeploySelected} disabled={deploying || !docId.trim() || selected.size === 0}>
+                          <Send size={12} />
+                          {deploying ? 'Deploying...' : `Deploy (${selected.size})`}
+                        </button>
+                      </>
+                    )}
+                  </>
+                )
+              })()}
 
               <FeedbackMessage message={feedback} isError={feedbackErr} />
             </div>

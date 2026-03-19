@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback } from 'react'
 import { clsx } from 'clsx'
 import { ExternalLink, Rocket, ArrowLeft, Clock, CalendarDays, ChevronRight, BookOpen } from 'lucide-react'
 import { ModuleLayout } from '@/components/ModuleLayout'
+import { WiringManifest } from '@/components/integrations'
 import { Card, Badge, Button, Spinner } from '@ui/atoms'
 import { api } from '@/lib/api'
 import type { ProjectRecord, ProjectStatus, BudgetCalculation, StageInfo, ResolvedManifest, PolicyNote } from '@/lib/types'
@@ -294,6 +295,8 @@ export function ProjectDetailPage() {
         >
           All Projects
         </Button>
+
+        <WiringManifest module="projects" />
 
         {/* Header */}
         <div className="flex flex-col gap-2">
