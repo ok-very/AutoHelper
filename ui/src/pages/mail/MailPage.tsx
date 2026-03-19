@@ -1,15 +1,30 @@
-import { useState, useMemo } from 'react'
+import { useState, useEffect, useMemo } from 'react'
 import { ModuleLayout } from '@/components/ModuleLayout'
 import { useMailInbox } from './hooks/useMailInbox'
 import { MailSidebar } from './components/MailSidebar'
 import { MailEmailList } from './components/MailEmailList'
 import { MailDetailView } from './components/MailDetailView'
-import type { MailEmail, ViewMode, RequestTab, TriageBucket } from './types'
+import type { ViewMode, RequestTab, TriageBucket } from './types'
 
 const CURRENT_USER_EMAIL = 'neal@ballardfineart.com'
 
 export function MailPage() {
-  const { emails, loading } = useMailInbox()
+  // Account state
+  const [accounts, setAccounts] = useState<string[]>([])
+  const [activeAccount, setActiveAccount] = useState<string | null>(null)
+
+  // Fetch accounts on mount
+  useEffect(() => {
+    fetch('/mail/accounts')
+      .then(r => r.ok ? r.json() : [])
+      .then(setAccounts)
+      .catch(() => {})
+  }, [])
+
+  // Inbox — filtered by account
+  const { emails, loading } = useMailInbox({
+    account: activeAccount ?? undefined,
+  })
   const [selectedId, setSelectedId] = useState<string | null>(null)
 
   // View state
@@ -79,6 +94,9 @@ export function MailPage() {
           requestTab={requestTab}
           onRequestTabChange={setRequestTab}
           emails={emails}
+          accounts={accounts}
+          activeAccount={activeAccount}
+          onAccountChange={setActiveAccount}
         />
         <MailEmailList
           emails={filteredEmails}

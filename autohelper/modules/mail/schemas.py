@@ -43,6 +43,7 @@ class TransientEmail(BaseModel):
     triage_status: str | None = None
     triage_notes: str | None = None
     triaged_at: str | None = None
+    account: str = ""
 
 
 class TransientEmailList(BaseModel):

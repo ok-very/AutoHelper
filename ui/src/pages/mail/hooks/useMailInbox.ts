@@ -1,9 +1,8 @@
 import { useState, useEffect, useCallback } from 'react'
-import { api } from '@/lib/api'
 import type { MailEmail } from '../types'
 import { hydrateEmail } from '../types'
 
-export function useMailInbox(params?: { project_id?: string }) {
+export function useMailInbox(params?: { project_id?: string; account?: string }) {
   const [emails, setEmails] = useState<MailEmail[]>([])
   const [loading, setLoading] = useState(true)
   const [total, setTotal] = useState(0)
@@ -12,6 +11,7 @@ export function useMailInbox(params?: { project_id?: string }) {
     setLoading(true)
     const qs = new URLSearchParams()
     if (params?.project_id) qs.set('project_id', params.project_id)
+    if (params?.account) qs.set('account', params.account)
     qs.set('limit', '200')
 
     fetch(`/mail/emails?${qs}`)
@@ -22,7 +22,7 @@ export function useMailInbox(params?: { project_id?: string }) {
       })
       .catch(() => { setEmails([]); setTotal(0) })
       .finally(() => setLoading(false))
-  }, [params?.project_id])
+  }, [params?.project_id, params?.account])
 
   useEffect(() => { load() }, [load])
 

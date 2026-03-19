@@ -12,6 +12,7 @@ export interface MailEmail {
   triage_status: string | null
   triage_notes: string | null
   triaged_at: string | null
+  account: string
 
   // Computed client-side from metadata if available
   fromName?: string

@@ -29,7 +29,7 @@ router = APIRouter(prefix="/mail", tags=["mail"])
 # Column list shared by list and get queries
 _EMAIL_COLUMNS = """
     id, subject, sender, received_at, project_id, body_preview,
-    metadata, ingestion_id, created_at, triage_status, triage_notes, triaged_at
+    metadata, ingestion_id, created_at, triage_status, triage_notes, triaged_at, account
 """
 
 
@@ -61,10 +61,21 @@ def _row_to_email(row: tuple[str, ...]) -> TransientEmail:
         triage_status=row[9],
         triage_notes=row[10],
         triaged_at=row[11],
+        account=row[12] if len(row) > 12 else "",
     )
 
 
 VALID_TRIAGE_STATUSES = {"pending", "action_required", "informational", "archived"}
+
+
+@router.get("/accounts")
+async def list_accounts() -> list[str]:
+    """List distinct account names from ingested emails."""
+    db = get_db()
+    rows = db.execute(
+        "SELECT DISTINCT account FROM transient_emails WHERE account != '' ORDER BY account"
+    ).fetchall()
+    return [row[0] for row in rows]
 
 
 @router.get("/status", response_model=MailServiceStatus)
@@ -103,39 +114,39 @@ async def stop_service() -> dict[str, str]:
 @router.get("/emails", response_model=TransientEmailList)
 async def list_emails(
     project_id: str | None = Query(None, description="Filter by project ID"),
+    account: str | None = Query(None, description="Filter by account/mailbox name"),
     limit: int = Query(50, ge=1, le=500),
     offset: int = Query(0, ge=0),
 ) -> TransientEmailList:
     """List transient emails with optional filtering."""
     db = get_db()
 
+    where_clauses: list[str] = []
+    params: list[str | int] = []
+
     if project_id:
-        count_sql = "SELECT COUNT(*) FROM transient_emails WHERE project_id = ?"
-        total = db.execute(count_sql, (project_id,)).fetchone()[0]
+        where_clauses.append("project_id = ?")
+        params.append(project_id)
+    if account:
+        where_clauses.append("account = ?")
+        params.append(account)
 
-        rows = db.execute(
-            f"""
-            SELECT {_EMAIL_COLUMNS}
-            FROM transient_emails
-            WHERE project_id = ?
-            ORDER BY received_at DESC
-            LIMIT ? OFFSET ?
-        """,
-            (project_id, limit, offset),
-        ).fetchall()
-    else:
-        count_sql = "SELECT COUNT(*) FROM transient_emails"
-        total = db.execute(count_sql).fetchone()[0]
+    where_sql = f"WHERE {' AND '.join(where_clauses)}" if where_clauses else ""
 
-        rows = db.execute(
-            f"""
-            SELECT {_EMAIL_COLUMNS}
-            FROM transient_emails
-            ORDER BY received_at DESC
-            LIMIT ? OFFSET ?
-        """,
-            (limit, offset),
-        ).fetchall()
+    total = db.execute(
+        f"SELECT COUNT(*) FROM transient_emails {where_sql}", params
+    ).fetchone()[0]
+
+    rows = db.execute(
+        f"""
+        SELECT {_EMAIL_COLUMNS}
+        FROM transient_emails
+        {where_sql}
+        ORDER BY received_at DESC
+        LIMIT ? OFFSET ?
+    """,
+        [*params, limit, offset],
+    ).fetchall()
 
     emails = [_row_to_email(row) for row in rows]
 

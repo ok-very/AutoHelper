@@ -1,6 +1,6 @@
 import {
   Inbox, CheckCircle2, Clock, FileText, Calendar, AlertCircle,
-  Activity, Send, Hourglass, Hash
+  Activity, Send, Hourglass, Hash, Mail
 } from 'lucide-react'
 import type { MailEmail, TriageBucket, ViewMode, RequestTab } from '../types'
 
@@ -16,6 +16,9 @@ interface MailSidebarProps {
   requestTab: RequestTab
   onRequestTabChange: (tab: RequestTab) => void
   emails: MailEmail[]
+  accounts: string[]
+  activeAccount: string | null
+  onAccountChange: (account: string | null) => void
 }
 
 const BUCKETS = [
@@ -34,6 +37,7 @@ export function MailSidebar({
   activeProject, onProjectChange,
   requestTab, onRequestTabChange,
   emails,
+  accounts, activeAccount, onAccountChange,
 }: MailSidebarProps) {
   const pendingCount = emails.filter(e =>
     e.sender !== CURRENT_USER_EMAIL &&
@@ -48,6 +52,26 @@ export function MailSidebar({
       display: 'flex', flexDirection: 'column', flexShrink: 0,
       fontFamily: 'var(--font-sans)',
     }}>
+      {/* Accounts */}
+      {accounts.length > 0 && (
+        <div style={{ padding: '12px 16px 0' }}>
+          <div style={{ fontSize: '10px', fontWeight: 600, color: 'var(--fg-disabled)', textTransform: 'uppercase', letterSpacing: '0.06em', padding: '0 8px 6px' }}>
+            Accounts
+          </div>
+          <NavButton active={!activeAccount} onClick={() => onAccountChange(null)} icon={Mail} label="All Accounts" />
+          {accounts.map(acc => (
+            <NavButton
+              key={acc}
+              active={activeAccount === acc}
+              onClick={() => onAccountChange(acc)}
+              icon={Mail}
+              label={acc}
+              count={emails.filter(e => e.account === acc).length}
+            />
+          ))}
+        </div>
+      )}
+
       {/* View Toggle */}
       <div style={{ padding: '16px 16px 0' }}>
         <div style={{ display: 'flex', background: 'var(--bg-surface)', padding: 3, borderRadius: 6, marginBottom: 16 }}>

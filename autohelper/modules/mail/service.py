@@ -247,61 +247,70 @@ class MailService:
             return None
 
     def _check_inbox(self) -> None:
-        """Check Inbox for new emails in the last interval."""
+        """Check all Outlook account inboxes for new emails."""
         outlook = self._get_outlook()
         if not outlook:
             return
 
         namespace = outlook.GetNamespace("MAPI")
-        inbox = namespace.GetDefaultFolder(6)  # 6 = Inbox
 
-        # Look back slightly more than interval to ensure coverage
+        # Iterate all account stores (top-level MAPI folders = accounts/stores)
+        for i in range(namespace.Folders.Count):
+            try:
+                account_folder = namespace.Folders.Item(i + 1)
+                account_name = getattr(account_folder, "Name", f"Account {i + 1}")
+
+                inbox = self._find_inbox(account_folder)
+                if inbox is None:
+                    continue
+
+                self._check_account_inbox(account_name, inbox)
+            except Exception as e:
+                logger.warning("Error accessing account %d: %s", i + 1, e)
+
+    @staticmethod
+    def _find_inbox(account_folder: Any) -> Any:
+        """Find the Inbox folder within an account's folder tree."""
+        try:
+            folders = account_folder.Folders
+            for j in range(folders.Count):
+                folder = folders.Item(j + 1)
+                # Match common Inbox folder names across locales
+                name = getattr(folder, "Name", "").lower()
+                if name in ("inbox", "posteingang", "boîte de réception", "bandeja de entrada"):
+                    return folder
+            return None
+        except Exception:
+            return None
+
+    def _check_account_inbox(self, account_name: str, inbox: Any) -> None:
+        """Check a single account inbox for recent emails."""
         seconds_back = self.settings.mail_poll_interval + 10
         cutoff = datetime.now() - timedelta(seconds=seconds_back)
 
-        # Iterate (Optimize with restricted search in future if volume is high)
-        # For now, iterating recent items is okay if inbox isn't huge,
-        # but better to use Restrict or just check last N items if possible.
-        # We'll trust the previous logic's approach but add a timestamp check.
-
-        # Sort items? Default order is usually reliable but not guaranteed.
-        # Let's iterate backwards or use Restrict for better perf
-
         items = inbox.Items
-        items.Sort("[ReceivedTime]", True)  # Descending
+        items.Sort("[ReceivedTime]", True)
 
         count = 0
         for item in items:
-            # Stop if we went past the cutoff
             try:
                 if not hasattr(item, "ReceivedTime"):
                     continue
-
                 received = item.ReceivedTime
-                # Pywin32 time conversion - skip items without valid timestamps
                 if hasattr(received, "timestamp"):
                     dt = datetime.fromtimestamp(received.timestamp())
                 else:
-                    # Skip items without parseable timestamp to avoid reprocessing
-                    subj = getattr(item, "Subject", "?")
-                    logger.debug(f"Skipping item without valid timestamp: {subj}")
                     continue
-
                 if dt < cutoff:
-                    break  # We are done
-
-                # Process
-                self._process_email_item(item)
-                count += 1
-
-                if count > 50:  # Safety guard
                     break
-
+                self._process_email_item(item, account=account_name)
+                count += 1
+                if count > 50:
+                    break
             except Exception as e:
-                logger.warning(f"Skipping item due to error: {e}")
-                continue
+                logger.warning("Skipping item: %s", e)
 
-    def _process_email_item(self, item: Any) -> bool:
+    def _process_email_item(self, item: Any, account: str = "") -> bool:
         """Process a single email item."""
         import hashlib
 
@@ -375,7 +384,7 @@ class MailService:
                     att.SaveAsFile(str(candidate))
 
             # 5. Save to DB (Transient)
-            self._save_transient_record(item, proj_id, received_dt, entry_id)
+            self._save_transient_record(item, proj_id, received_dt, entry_id, account=account)
 
             return True
 
@@ -394,7 +403,8 @@ class MailService:
         return row is not None
 
     def _save_transient_record(
-        self, item: Any, project_id: str, received_dt: datetime, entry_id: str
+        self, item: Any, project_id: str, received_dt: datetime, entry_id: str,
+        account: str = "",
     ) -> None:
         """Save email metadata to SQLite."""
         db = get_db()
@@ -412,10 +422,10 @@ class MailService:
         db.execute(
             """
             INSERT OR IGNORE INTO transient_emails
-                (id, subject, sender, received_at, project_id, body_preview, body_html, metadata)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                (id, subject, sender, received_at, project_id, body_preview, body_html, metadata, account)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
-            (entry_id, subject, sender, received_dt, project_id, body, body_html, json.dumps(metadata)),
+            (entry_id, subject, sender, received_dt, project_id, body, body_html, json.dumps(metadata), account),
         )
         db.commit()
 
