@@ -506,7 +506,7 @@ export interface EmailTemplateDef {
   merge_fields: string[]
   maps_to: string[]
   order: number
-  recipient_role: RecipientRole
+  recipients: RecipientRole[]
 }
 
 export interface EmailTemplateData {

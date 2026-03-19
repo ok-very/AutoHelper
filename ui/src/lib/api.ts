@@ -218,7 +218,6 @@ export const api = {
       save: (data: EmailTemplateData) => put('/api/projects/email-templates', data),
       updateTemplate: (tmpl: Partial<EmailTemplateDef> & { key: string }) =>
         put('/api/projects/email-templates/template', tmpl),
-      seed: () => post('/api/projects/email-templates/seed').then(r => r.json() as Promise<EmailTemplateData>),
     },
   },
 

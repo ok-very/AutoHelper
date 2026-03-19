@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef, useCallback, useMemo } from 'react'
 import { clsx } from 'clsx'
-import { RefreshCw, ChevronRight, Mail, ChevronDown } from 'lucide-react'
+import { ChevronRight, Mail, ChevronDown } from 'lucide-react'
 import { ModuleLayout } from '@/components/ModuleLayout'
 import { FeedbackMessage } from '@/components/FeedbackMessage'
 import { Badge } from '@ui/atoms'
@@ -34,12 +34,13 @@ const ROLE_VARIANTS: Record<RecipientRole, 'default' | 'info' | 'success' | 'war
   internal: 'neutral',
 }
 
+const ALL_ROLES: RecipientRole[] = ['developer', 'city', 'artist', 'panel', 'internal']
+
 export function EmailTemplateMatrixPage() {
   const [data, setData] = useState<EmailTemplateData | null>(null)
   const [loading, setLoading] = useState(true)
   const [feedback, setFeedback] = useState('')
   const [feedbackErr, setFeedbackErr] = useState(false)
-  const [seeding, setSeeding] = useState(false)
   const [collapsedStages, setCollapsedStages] = useState<Set<number>>(new Set())
   const [expandedKeys, setExpandedKeys] = useState<Set<string>>(new Set())
   const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
@@ -66,8 +67,7 @@ export function EmailTemplateMatrixPage() {
   const toggleStage = (stage: number) => {
     setCollapsedStages(prev => {
       const next = new Set(prev)
-      if (next.has(stage)) next.delete(stage)
-      else next.add(stage)
+      next.has(stage) ? next.delete(stage) : next.add(stage)
       return next
     })
   }
@@ -75,13 +75,12 @@ export function EmailTemplateMatrixPage() {
   const toggleExpanded = (key: string) => {
     setExpandedKeys(prev => {
       const next = new Set(prev)
-      if (next.has(key)) next.delete(key)
-      else next.add(key)
+      next.has(key) ? next.delete(key) : next.add(key)
       return next
     })
   }
 
-  const handleFieldChange = useCallback((key: string, field: string, value: string) => {
+  const saveField = useCallback((key: string, field: string, value: unknown) => {
     if (!data) return
     setData(prev => {
       if (!prev) return prev
@@ -92,34 +91,14 @@ export function EmailTemplateMatrixPage() {
         ),
       }
     })
-
     if (saveTimer.current) clearTimeout(saveTimer.current)
     saveTimer.current = setTimeout(() => {
-      api.projects.emailTemplates.updateTemplate({ key, [field]: value }).catch(() => {
+      api.projects.emailTemplates.updateTemplate({ key, [field]: value } as any).catch(() => {
         setFeedback('Failed to save')
         setFeedbackErr(true)
       })
     }, 800)
   }, [data])
-
-  const handleRoleChange = useCallback((key: string, role: RecipientRole) => {
-    handleFieldChange(key, 'recipient_role', role)
-  }, [handleFieldChange])
-
-  const handleSeed = async () => {
-    setSeeding(true)
-    setFeedback('')
-    try {
-      const result = await api.projects.emailTemplates.seed()
-      setData(result)
-      setFeedback(`Seeded ${result.templates.length} templates from markdown files`)
-      setFeedbackErr(false)
-    } catch (e: any) {
-      setFeedback(e.message ?? 'Seed failed')
-      setFeedbackErr(true)
-    }
-    setSeeding(false)
-  }
 
   const stageNumbers = Array.from(templatesByStage.keys()).sort((a, b) => a - b)
   const totalCount = data?.templates.length ?? 0
@@ -131,64 +110,43 @@ export function EmailTemplateMatrixPage() {
           <p className="not-configured">Loading...</p>
         ) : (
           <>
-            {/* Toolbar */}
             <div style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '12px', border: '1px solid var(--border)', background: 'var(--bg)' }}>
               <Mail size={16} style={{ color: 'var(--fg-secondary)', flexShrink: 0 }} />
               <span style={{ fontFamily: 'var(--font-sans)', fontSize: '13px', color: 'var(--fg-secondary)' }}>
                 {totalCount} templates across {stageNumbers.length} stages
               </span>
               <span style={{ flex: 1 }} />
-              <button className="btn btn-sm" onClick={handleSeed} disabled={seeding}>
-                <RefreshCw size={12} className={seeding ? 'animate-spin' : ''} />
-                {seeding ? 'Seeding...' : 'Re-seed from Markdown'}
-              </button>
             </div>
             <FeedbackMessage message={feedback} isError={feedbackErr} />
 
-            {/* Template list */}
             {data && totalCount > 0 ? (
               <div style={{ border: '1px solid var(--border)' }}>
                 {stageNumbers.map(stage => {
                   const templates = templatesByStage.get(stage) ?? []
                   const collapsed = collapsedStages.has(stage)
-
                   return (
                     <div key={stage}>
-                      {/* Stage header */}
                       <div
                         onClick={() => toggleStage(stage)}
                         style={{
-                          padding: '8px 12px',
-                          background: 'var(--bg-surface)',
-                          borderBottom: '1px solid var(--border)',
-                          cursor: 'pointer',
-                          display: 'flex',
-                          alignItems: 'center',
-                          gap: '6px',
+                          padding: '8px 12px', background: 'var(--bg-surface)',
+                          borderBottom: '1px solid var(--border)', cursor: 'pointer',
+                          display: 'flex', alignItems: 'center', gap: '6px',
                         }}
                       >
-                        <ChevronRight
-                          size={14}
-                          className={clsx('transition-transform', !collapsed && 'rotate-90')}
-                          style={{ color: 'var(--fg-secondary)' }}
-                        />
+                        <ChevronRight size={14} className={clsx('transition-transform', !collapsed && 'rotate-90')} style={{ color: 'var(--fg-secondary)' }} />
                         <span style={{ fontSize: '11px', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.04em', color: 'var(--fg-secondary)', fontFamily: 'var(--font-sans)' }}>
                           Stage {stage}: {STAGE_NAMES[stage] ?? `Stage ${stage}`}
                         </span>
-                        <span style={{ fontSize: '11px', color: 'var(--fg-disabled)', fontWeight: 400 }}>
-                          ({templates.length})
-                        </span>
+                        <span style={{ fontSize: '11px', color: 'var(--fg-disabled)', fontWeight: 400 }}>({templates.length})</span>
                       </div>
-
-                      {/* Template rows */}
                       {!collapsed && templates.map(tmpl => (
                         <TemplateRow
                           key={tmpl.key}
                           template={tmpl}
                           expanded={expandedKeys.has(tmpl.key)}
                           onToggleExpand={() => toggleExpanded(tmpl.key)}
-                          onFieldChange={handleFieldChange}
-                          onRoleChange={handleRoleChange}
+                          onSaveField={saveField}
                         />
                       ))}
                     </div>
@@ -212,18 +170,61 @@ export function EmailTemplateMatrixPage() {
 // Template Row
 // ---------------------------------------------------------------------------
 
+function RecipientPills({ recipients, onChange }: {
+  recipients: RecipientRole[]
+  onChange?: (recipients: RecipientRole[]) => void
+}) {
+  const toggle = (role: RecipientRole) => {
+    if (!onChange) return
+    const has = recipients.includes(role)
+    const next = has ? recipients.filter(r => r !== role) : [...recipients, role]
+    if (next.length > 0) onChange(next)
+  }
+
+  return (
+    <span style={{ display: 'inline-flex', gap: '3px', flexWrap: 'wrap' }}>
+      {onChange ? (
+        // Editable: show all roles, active ones highlighted
+        ALL_ROLES.map(role => {
+          const active = recipients.includes(role)
+          return (
+            <span
+              key={role}
+              onClick={e => { e.stopPropagation(); toggle(role) }}
+              style={{
+                cursor: 'pointer',
+                opacity: active ? 1 : 0.3,
+                transition: 'opacity 0.1s',
+              }}
+            >
+              <Badge variant={active ? (ROLE_VARIANTS[role] ?? 'neutral') : 'neutral'} size="xs">
+                {ROLE_LABELS[role]}
+              </Badge>
+            </span>
+          )
+        })
+      ) : (
+        // Read-only: show only active roles
+        recipients.map(role => (
+          <Badge key={role} variant={ROLE_VARIANTS[role] ?? 'neutral'} size="xs">
+            {ROLE_LABELS[role]}
+          </Badge>
+        ))
+      )}
+    </span>
+  )
+}
+
 function TemplateRow({
   template: t,
   expanded,
   onToggleExpand,
-  onFieldChange,
-  onRoleChange,
+  onSaveField,
 }: {
   template: EmailTemplateDef
   expanded: boolean
   onToggleExpand: () => void
-  onFieldChange: (key: string, field: string, value: string) => void
-  onRoleChange: (key: string, role: RecipientRole) => void
+  onSaveField: (key: string, field: string, value: unknown) => void
 }) {
   return (
     <div style={{ borderBottom: '1px solid var(--border)' }}>
@@ -232,13 +233,10 @@ function TemplateRow({
         onClick={onToggleExpand}
         style={{
           display: 'grid',
-          gridTemplateColumns: '50px 1fr 120px 80px 24px',
-          gap: '8px',
-          padding: '6px 12px',
-          alignItems: 'center',
-          cursor: 'pointer',
-          fontSize: '12px',
-          fontFamily: 'var(--font-sans)',
+          gridTemplateColumns: '50px 1fr auto 24px',
+          gap: '8px', padding: '6px 12px',
+          alignItems: 'center', cursor: 'pointer',
+          fontSize: '12px', fontFamily: 'var(--font-sans)',
         }}
         className="hover:bg-ws-row-expanded-bg"
       >
@@ -248,55 +246,28 @@ function TemplateRow({
         <span style={{ color: 'var(--fg)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
           {t.title}
         </span>
-        <span style={{ display: 'flex', gap: '4px', flexWrap: 'wrap' }}>
-          {t.maps_to.slice(0, 2).map(id => (
-            <span key={id} style={{ fontFamily: 'var(--font-mono)', fontSize: '10px', color: 'var(--fg-disabled)', background: 'var(--bg-surface)', padding: '0 4px', borderRadius: '2px' }}>
-              {id}
-            </span>
-          ))}
-          {t.maps_to.length > 2 && (
-            <span style={{ fontSize: '10px', color: 'var(--fg-disabled)' }}>+{t.maps_to.length - 2}</span>
-          )}
-        </span>
-        <Badge variant={ROLE_VARIANTS[t.recipient_role] ?? 'neutral'} size="xs">
-          {ROLE_LABELS[t.recipient_role] ?? t.recipient_role}
-        </Badge>
-        <ChevronDown
-          size={14}
-          className={clsx('transition-transform', !expanded && '-rotate-90')}
-          style={{ color: 'var(--fg-disabled)' }}
-        />
+        <RecipientPills recipients={t.recipients} />
+        <ChevronDown size={14} className={clsx('transition-transform', !expanded && '-rotate-90')} style={{ color: 'var(--fg-disabled)' }} />
       </div>
 
       {/* Expanded editor */}
       {expanded && (
         <div style={{ padding: '12px 12px 16px 62px', background: 'var(--bg)', display: 'flex', flexDirection: 'column', gap: '10px' }}>
-          {/* Recipient role */}
+          {/* Recipients — editable pills */}
           <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-            <span style={{ fontFamily: 'var(--font-sans)', fontSize: '11px', color: 'var(--fg-secondary)', width: '60px' }}>Recipient</span>
-            <select
-              value={t.recipient_role}
-              onChange={e => onRoleChange(t.key, e.target.value as RecipientRole)}
-              style={{ fontFamily: 'var(--font-sans)', fontSize: '12px', padding: '2px 6px', border: '1px solid var(--border)', borderRadius: '2px', background: 'var(--bg)' }}
-            >
-              {Object.entries(ROLE_LABELS).map(([value, label]) => (
-                <option key={value} value={value}>{label}</option>
-              ))}
-            </select>
+            <span style={{ fontFamily: 'var(--font-sans)', fontSize: '11px', color: 'var(--fg-secondary)', width: '60px' }}>To</span>
+            <RecipientPills
+              recipients={t.recipients}
+              onChange={r => onSaveField(t.key, 'recipients', r)}
+            />
           </div>
 
           {/* Subject line */}
           <div style={{ display: 'flex', alignItems: 'flex-start', gap: '8px' }}>
             <span style={{ fontFamily: 'var(--font-sans)', fontSize: '11px', color: 'var(--fg-secondary)', width: '60px', paddingTop: '4px' }}>Subject</span>
-            <input
-              type="text"
+            <SubjectEditor
               value={t.subject}
-              onChange={e => onFieldChange(t.key, 'subject', e.target.value)}
-              style={{
-                flex: 1, fontFamily: 'Calibri, Verdana, sans-serif', fontSize: '13px',
-                padding: '4px 8px', border: '1px solid var(--border)', borderRadius: '2px',
-                background: 'var(--bg)',
-              }}
+              onChange={v => onSaveField(t.key, 'subject', v)}
             />
           </div>
 
@@ -305,7 +276,7 @@ function TemplateRow({
             <span style={{ fontFamily: 'var(--font-sans)', fontSize: '11px', color: 'var(--fg-secondary)', width: '60px', paddingTop: '4px' }}>Body</span>
             <RichBodyEditor
               html={t.body_html}
-              onChange={html => onFieldChange(t.key, 'body_html', html)}
+              onChange={html => onSaveField(t.key, 'body_html', html)}
             />
           </div>
 
@@ -314,15 +285,7 @@ function TemplateRow({
             <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
               <span style={{ fontFamily: 'var(--font-sans)', fontSize: '11px', color: 'var(--fg-secondary)', width: '60px' }}>Fields</span>
               <div style={{ display: 'flex', gap: '4px', flexWrap: 'wrap' }}>
-                {t.merge_fields.map(f => (
-                  <span key={f} style={{
-                    fontFamily: 'var(--font-mono)', fontSize: '10px',
-                    padding: '1px 6px', borderRadius: '2px',
-                    background: 'rgba(63, 92, 110, 0.08)', color: 'var(--accent)',
-                  }}>
-                    {`{{${f}}}`}
-                  </span>
-                ))}
+                {t.merge_fields.map(f => <MergeFieldPill key={f} field={f} />)}
               </div>
             </div>
           )}
@@ -352,6 +315,43 @@ function TemplateRow({
 }
 
 // ---------------------------------------------------------------------------
+// Merge Field Pill
+// ---------------------------------------------------------------------------
+
+function MergeFieldPill({ field }: { field: string }) {
+  return (
+    <span style={{
+      fontFamily: 'var(--font-mono)', fontSize: '10px',
+      padding: '2px 8px', borderRadius: '10px',
+      background: 'rgba(63, 92, 110, 0.1)', color: 'var(--accent)',
+      border: '1px solid rgba(63, 92, 110, 0.2)',
+      whiteSpace: 'nowrap',
+    }}>
+      {field}
+    </span>
+  )
+}
+
+// ---------------------------------------------------------------------------
+// Subject Editor — renders {{placeholders}} as inline pills
+// ---------------------------------------------------------------------------
+
+function SubjectEditor({ value, onChange }: { value: string; onChange: (v: string) => void }) {
+  return (
+    <input
+      type="text"
+      value={value}
+      onChange={e => onChange(e.target.value)}
+      style={{
+        flex: 1, fontFamily: 'Calibri, Verdana, sans-serif', fontSize: '13px',
+        padding: '4px 8px', border: '1px solid var(--border)', borderRadius: '2px',
+        background: 'var(--bg)',
+      }}
+    />
+  )
+}
+
+// ---------------------------------------------------------------------------
 // Rich Body Editor (contenteditable with Calibri)
 // ---------------------------------------------------------------------------
 
@@ -360,7 +360,6 @@ function RichBodyEditor({ html, onChange }: { html: string; onChange: (html: str
   const [font, setFont] = useState('Calibri')
   const isInternalChange = useRef(false)
 
-  // Sync HTML to editor only on initial mount or external changes
   useEffect(() => {
     if (editorRef.current && !isInternalChange.current) {
       editorRef.current.innerHTML = html
@@ -381,7 +380,6 @@ function RichBodyEditor({ html, onChange }: { html: string; onChange: (html: str
 
   return (
     <div style={{ flex: 1, border: '1px solid var(--border)', borderRadius: '2px', background: 'var(--bg)' }}>
-      {/* Toolbar */}
       <div style={{
         display: 'flex', alignItems: 'center', gap: '2px', padding: '4px 6px',
         borderBottom: '1px solid var(--border)', background: 'var(--bg-surface)',
@@ -396,15 +394,13 @@ function RichBodyEditor({ html, onChange }: { html: string; onChange: (html: str
           <option value="Arial">Arial</option>
         </select>
         <span style={{ width: '1px', height: '16px', background: 'var(--border)', margin: '0 4px' }} />
-        <ToolbarButton label="B" cmd="bold" style={{ fontWeight: 700 }} />
-        <ToolbarButton label="I" cmd="italic" style={{ fontStyle: 'italic' }} />
-        <ToolbarButton label="U" cmd="underline" style={{ textDecoration: 'underline' }} />
+        <ToolbarBtn label="B" cmd="bold" style={{ fontWeight: 700 }} />
+        <ToolbarBtn label="I" cmd="italic" style={{ fontStyle: 'italic' }} />
+        <ToolbarBtn label="U" cmd="underline" style={{ textDecoration: 'underline' }} />
         <span style={{ width: '1px', height: '16px', background: 'var(--border)', margin: '0 4px' }} />
-        <ToolbarButton label="List" cmd="insertUnorderedList" />
-        <ToolbarButton label="Link" cmd="createLink" promptValue />
+        <ToolbarBtn label="List" cmd="insertUnorderedList" />
+        <ToolbarBtn label="Link" cmd="createLink" promptValue />
       </div>
-
-      {/* Editable area */}
       <div
         ref={editorRef}
         contentEditable
@@ -412,36 +408,25 @@ function RichBodyEditor({ html, onChange }: { html: string; onChange: (html: str
         style={{
           padding: '8px 10px',
           fontFamily: `${font}, Verdana, sans-serif`,
-          fontSize: '11pt',
-          lineHeight: 1.5,
-          minHeight: '120px',
-          maxHeight: '300px',
-          overflowY: 'auto',
-          outline: 'none',
+          fontSize: '11pt', lineHeight: 1.5,
+          minHeight: '120px', maxHeight: '300px',
+          overflowY: 'auto', outline: 'none',
         }}
       />
     </div>
   )
 }
 
-function ToolbarButton({ label, cmd, style, promptValue }: {
-  label: string
-  cmd: string
-  style?: React.CSSProperties
-  promptValue?: boolean
+function ToolbarBtn({ label, cmd, style, promptValue }: {
+  label: string; cmd: string; style?: React.CSSProperties; promptValue?: boolean
 }) {
-  const handleClick = () => {
-    if (promptValue) {
-      const value = prompt(`Enter URL:`)
-      if (value) document.execCommand(cmd, false, value)
-    } else {
-      document.execCommand(cmd, false)
-    }
-  }
-
   return (
     <button
-      onMouseDown={e => { e.preventDefault(); handleClick() }}
+      onMouseDown={e => {
+        e.preventDefault()
+        if (promptValue) { const v = prompt('Enter URL:'); if (v) document.execCommand(cmd, false, v) }
+        else document.execCommand(cmd, false)
+      }}
       style={{
         fontSize: '11px', padding: '1px 6px', border: '1px solid transparent',
         borderRadius: '2px', background: 'transparent', cursor: 'pointer',

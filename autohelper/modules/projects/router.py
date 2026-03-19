@@ -113,7 +113,7 @@ class TemplateUpdate(BaseModel):
     title: str | None = None
     subject: str | None = None
     body_html: str | None = None
-    recipient_role: str | None = None
+    recipients: list[str] | None = None
     maps_to: list[str] | None = None
     stage: int | None = None
 

@@ -122,18 +122,36 @@ def get_email_template_store() -> EmailTemplateStore:
 # ── Seed from markdown ──────────────────────────────────────────────
 
 
-def _infer_recipient_role(title: str, body: str) -> str:
-    """Infer recipient role from template title and body content."""
+def _infer_recipients(title: str, body: str) -> list[str]:
+    """Infer recipient roles from template title and body content.
+    Templates can target multiple roles (e.g. meeting agendas go to everyone)."""
     lower = (title + " " + body).lower()
-    if "city" in lower or "tamara" in lower or "pac" in lower:
-        return "city"
-    if "artist" in lower and ("invite" in lower or "notify" in lower or "confirm" in lower):
-        return "artist"
-    if "selection panel" in lower or "sp member" in lower or "community advisory" in lower:
-        return "panel"
-    if "invoice" in lower or "internal" in lower:
-        return "internal"
-    return "developer"
+    roles: list[str] = []
+
+    # Check each role — a template can have multiple
+    if any(k in lower for k in ("developer", "client", "billing")):
+        roles.append("developer")
+    if any(k in lower for k in ("city", "tamara", "pac meeting", "planner", "coordinator")):
+        roles.append("city")
+    if any(k in lower for k in ("artist invitation", "artist kick", "artist orient",
+                                  "notify successful", "notify unsuccessful",
+                                  "artist invoice", "artist honor",
+                                  "confirm with artist", "shortlisted artist",
+                                  "concept proposal")):
+        roles.append("artist")
+    if any(k in lower for k in ("selection panel", "sp member", "community advisory",
+                                  "panel member", "confirm with sp")):
+        roles.append("panel")
+    if any(k in lower for k in ("internal", "bfa invoice")):
+        roles.append("internal")
+
+    # Multi-target patterns — meetings, agendas, follow-ups that go to groups
+    if any(k in lower for k in ("full group", "group reminder", "agenda", "meeting details")):
+        for r in ("developer", "panel", "artist"):
+            if r not in roles:
+                roles.append(r)
+
+    return roles if roles else ["developer"]
 
 
 def _build_task_key_map() -> dict[str, list[str]]:
@@ -180,7 +198,7 @@ def seed_from_markdown() -> EmailTemplateData:
                 merge_fields=tmpl.merge_fields,
                 maps_to=task_map.get(tmpl.key, []),
                 order=len(templates),
-                recipient_role=_infer_recipient_role(tmpl.title, tmpl.body_markdown),
+                recipients=_infer_recipients(tmpl.title, tmpl.body_markdown),
             )
         )
 

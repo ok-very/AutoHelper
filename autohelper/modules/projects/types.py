@@ -248,7 +248,7 @@ class EmailTemplateDef(BaseModel):
     merge_fields: list[str] = Field(default_factory=list)
     maps_to: list[str] = Field(default_factory=list)  # task temp_ids
     order: int = 0
-    recipient_role: str = "developer"  # developer, city, artist, panel, internal
+    recipients: list[str] = Field(default_factory=lambda: ["developer"])  # developer, city, artist, panel, internal
 
 
 class EmailTemplateData(BaseModel):
