@@ -270,6 +270,12 @@ class ListsAPI:
         result = await self._client.post(f"/folder/{folder_id}/list", body=body)
         return ClickUpList.model_validate(result)
 
+    async def create_in_space(self, space_id: str, name: str, **kwargs: Any) -> ClickUpList:
+        """Create a folderless list directly in a space."""
+        body: dict[str, Any] = {"name": name, **kwargs}
+        result = await self._client.post(f"/space/{space_id}/list", body=body)
+        return ClickUpList.model_validate(result)
+
     async def get(self, list_id: str) -> ClickUpList:
         result = await self._client.get(f"/list/{list_id}")
         return ClickUpList.model_validate(result)
@@ -331,6 +337,43 @@ class TeamsAPI:
         return resp.teams
 
 
+class AttachmentsAPI:
+    """Task file attachment operations."""
+
+    def __init__(self, client: ClickUpClient) -> None:
+        self._client = client
+
+    async def upload(
+        self, task_id: str, file_path: str, filename: str | None = None
+    ) -> dict[str, Any]:
+        """Upload a file attachment to a ClickUp task (multipart form data)."""
+        from pathlib import Path
+
+        p = Path(file_path)
+        fname = filename or p.name
+        url = f"{self._client.base_url}/task/{task_id}/attachment"
+
+        # Use a separate client for multipart — the default client has
+        # Content-Type: application/json which conflicts with multipart boundary
+        async with httpx.AsyncClient(
+            headers={"Authorization": self._client._auth_header(self._client.token)},
+            timeout=60.0,
+        ) as upload_client:
+            with open(p, "rb") as f:
+                response = await upload_client.post(
+                    url,
+                    files={"attachment": (fname, f, "application/pdf")},
+                )
+
+        if response.status_code >= 400:
+            raise ClickUpApiError(
+                f"Attachment upload failed: {response.status_code}",
+                response.status_code,
+                response.text,
+            )
+        return response.json()
+
+
 class ClickUp:
     """
     High-level ClickUp API client.
@@ -356,6 +399,7 @@ class ClickUp:
         self.custom_fields = CustomFieldsAPI(self.client)
         self.comments = CommentsAPI(self.client)
         self.teams = TeamsAPI(self.client)
+        self.attachments = AttachmentsAPI(self.client)
 
     async def close(self) -> None:
         await self.client.close()

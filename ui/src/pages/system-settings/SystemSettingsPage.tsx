@@ -3,8 +3,6 @@ import { ArrowLeft, Settings, Plug, Terminal, Activity } from 'lucide-react'
 import { CardShell } from '@/components/settings/CardShell'
 import { StatusBadge } from '@/components/settings/StatusBadge'
 import { FieldRow } from '@/components/settings/FieldRow'
-import { ConnectedValue } from '@/components/settings/ConnectedValue'
-import { SourceAwareField } from '@/components/settings/SourceAwareField'
 import { FeedbackMessage } from '@/components/FeedbackMessage'
 import { IntegrationCard, PROVIDERS } from '@/components/integrations'
 import type { SourceType } from '@/components/integrations'
@@ -266,19 +264,7 @@ function GeneralSettingsCard() {
 
 function IntegrationsTab() {
   const { status, refresh } = useIntegrationStatus()
-  const [config, setConfig] = useState<Record<string, unknown>>({})
   const oauth = useOAuthConnect(refresh)
-
-  useEffect(() => {
-    api.config.get().then(cfg => setConfig(cfg as Record<string, unknown>)).catch(() => {})
-  }, [])
-
-  // Re-fetch config when status refreshes
-  useEffect(() => {
-    if (status) {
-      api.config.get().then(cfg => setConfig(cfg as Record<string, unknown>)).catch(() => {})
-    }
-  }, [status])
 
   if (!status) return null
 
@@ -310,14 +296,7 @@ function IntegrationsTab() {
           ? () => oauth.disconnect('ClickUp', 'clickup_token', '')
           : undefined}
       >
-        {status.clickup.configured && (
-          <ClickUpConfigFields
-            status={status}
-            config={config}
-            setConfig={setConfig}
-            onRefresh={refresh}
-          />
-        )}
+        {status.clickup.configured && <ClickUpStatus />}
       </IntegrationCard>
 
       {/* Monday.com */}
@@ -362,162 +341,20 @@ function IntegrationsTab() {
 // ClickUp Configuration (expanded fields inside IntegrationCard)
 // --------------------------------------------------------------------------
 
-function ClickUpConfigFields({
-  status,
-  config,
-  setConfig,
-  onRefresh,
-}: {
-  status: { clickup: { configured: boolean; workspace_id: { value: string; source: string }; space_id: { value: string; source: string }; list_id: { value: string; source: string } } }
-  config: Record<string, unknown>
-  setConfig: React.Dispatch<React.SetStateAction<Record<string, unknown>>>
-  onRefresh: () => void
-}) {
-  const [connected, setConnected] = useState<boolean | null>(null)
+function ClickUpStatus() {
   const [workspace, setWorkspace] = useState('')
-  const [testing, setTesting] = useState(false)
-  const [feedback, setFeedback] = useState('')
-  const [feedbackErr, setFeedbackErr] = useState(false)
 
   useEffect(() => {
-    if (status.clickup.configured) {
-      api.clickup.validate().then(v => {
-        setConnected(v.ok)
-        if (v.workspace) setWorkspace(v.workspace)
-      }).catch(() => setConnected(false))
-    } else {
-      setConnected(false)
-    }
-  }, [status.clickup.configured])
+    api.clickup.validate().then(v => {
+      if (v.ok) setWorkspace(v.workspace ?? '')
+    }).catch(() => {})
+  }, [])
 
-  const testConnection = async () => {
-    setTesting(true)
-    setFeedback('')
-    try {
-      const v = await api.clickup.validate()
-      setConnected(v.ok)
-      if (v.ok) {
-        setFeedback('Connection verified')
-        setFeedbackErr(false)
-        if (v.workspace) setWorkspace(v.workspace)
-      } else {
-        setFeedback(v.error ?? 'Validation failed')
-        setFeedbackErr(true)
-      }
-    } catch {
-      setFeedback('Network error')
-      setFeedbackErr(true)
-    }
-    setTesting(false)
-  }
-
-  const saveField = async (key: string, value: string) => {
-    try {
-      const r = await api.config.save({ [key]: value })
-      if (r.ok) {
-        setConfig(prev => ({ ...prev, [key]: value }))
-        setFeedback('Saved')
-        setFeedbackErr(false)
-        onRefresh()
-      }
-    } catch {
-      setFeedback('Save failed')
-      setFeedbackErr(true)
-    }
-  }
-
-  const cu = status.clickup
+  if (!workspace) return null
 
   return (
-    <>
-      {connected && workspace && (
-        <FieldRow label="Workspace">{workspace}</FieldRow>
-      )}
-
-      <SourceAwareField field={cu.workspace_id as any} label="Workspace ID" configKey="clickup_workspace_id" onSave={saveField} />
-      <SourceAwareField field={cu.space_id as any} label="Space ID" configKey="clickup_space_id" onSave={saveField} />
-      <SourceAwareField field={cu.list_id as any} label="Template List" configKey="clickup_list_id" onSave={saveField} />
-
-      <FieldRow label="Template Sync">
-        <label className="toggle">
-          <input
-            type="checkbox"
-            checked={Boolean(config.clickup_template_sync)}
-            onChange={e => saveField('clickup_template_sync', String(e.target.checked))}
-          />
-          <span className="toggle-slider" />
-        </label>
-      </FieldRow>
-
-      <FieldRow label="Artist List">
-        <ConnectedValue
-          value={String(config.clickup_artist_list_id ?? '')}
-          placeholder="List ID for artist records"
-          onSave={v => saveField('clickup_artist_list_id', v)}
-        />
-      </FieldRow>
-
-      <ArtistSyncRow listId={String(config.clickup_artist_list_id ?? '')} connected={connected === true} />
-
-      <div className="field-row-inline">
-        <button className="btn btn-sm" onClick={testConnection} disabled={testing}>
-          {testing ? 'Testing\u2026' : 'Test Connection'}
-        </button>
-        <FeedbackMessage message={feedback} isError={feedbackErr} />
-      </div>
-    </>
-  )
-}
-
-function ArtistSyncRow({ listId, connected }: { listId: string; connected: boolean }) {
-  const [syncing, setSyncing] = useState(false)
-  const [preview, setPreview] = useState<{ created: number; updated: number; unchanged: number; errors: string[] } | null>(null)
-  const [feedback, setFeedback] = useState('')
-  const [feedbackErr, setFeedbackErr] = useState(false)
-
-  const dryRun = async () => {
-    if (!listId) { setFeedback('Set Artist List ID first'); setFeedbackErr(true); return }
-    setSyncing(true); setFeedback('')
-    try {
-      const result = await api.clickup.artistSync(listId, true)
-      setPreview(result)
-      setFeedback(`Will create ${result.created}, update ${result.updated}, ${result.unchanged} unchanged`)
-      setFeedbackErr(false)
-    } catch (e) {
-      setFeedback(`${e}`); setFeedbackErr(true)
-    }
-    setSyncing(false)
-  }
-
-  const apply = async () => {
-    if (!listId) return
-    setSyncing(true); setFeedback('')
-    try {
-      const result = await api.clickup.artistSync(listId, false)
-      setPreview(null)
-      setFeedback(`Created ${result.created}, updated ${result.updated}${result.errors.length ? `, ${result.errors.length} errors` : ''}`)
-      setFeedbackErr(result.errors.length > 0)
-    } catch (e) {
-      setFeedback(`${e}`); setFeedbackErr(true)
-    }
-    setSyncing(false)
-  }
-
-  if (!connected) return null
-
-  return (
-    <FieldRow label="Artist Sync">
-      <div className="field-row-inline" style={{ flexWrap: 'wrap' }}>
-        <button className="btn btn-sm" onClick={dryRun} disabled={syncing || !listId}>
-          {syncing ? 'Syncing\u2026' : 'Preview'}
-        </button>
-        {preview && (
-          <button className="btn btn-sm btn-primary" onClick={apply} disabled={syncing}>
-            Apply
-          </button>
-        )}
-        <FeedbackMessage message={feedback} isError={feedbackErr} />
-      </div>
+    <FieldRow label="Workspace">
+      <span className="configured-value">{workspace}</span>
     </FieldRow>
   )
 }

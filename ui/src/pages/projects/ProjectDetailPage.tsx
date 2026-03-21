@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback } from 'react'
 import { clsx } from 'clsx'
-import { ExternalLink, Rocket, ArrowLeft, Clock, CalendarDays, ChevronRight, BookOpen } from 'lucide-react'
+import { ExternalLink, Rocket, ArrowLeft, Clock, CalendarDays, ChevronRight, BookOpen, Users, FolderOpen, FileText, Pencil, Check, X } from 'lucide-react'
 import { ModuleLayout } from '@/components/ModuleLayout'
 import { WiringManifest } from '@/components/integrations'
 import { Card, Badge, Button, Spinner } from '@ui/atoms'
@@ -193,6 +193,325 @@ function PolicyGuidanceCard({
 }
 
 // ---------------------------------------------------------------------------
+// Team Card
+// ---------------------------------------------------------------------------
+
+interface TeamContact {
+  id: string
+  contact_id: string
+  project_id: string
+  role: string
+  is_primary: boolean
+  notes: string | null
+  contact_name: string
+  contact_email: string
+  contact_company: string
+}
+
+function formatRole(role: string): string {
+  return role.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase())
+}
+
+function TeamCard({ projectId }: { projectId: string }) {
+  const [contacts, setContacts] = useState<TeamContact[]>([])
+  const [loading, setLoading] = useState(true)
+
+  useEffect(() => {
+    api.contacts.projectContacts(projectId)
+      .then((data: TeamContact[]) => setContacts(data))
+      .catch(() => {})
+      .finally(() => setLoading(false))
+  }, [projectId])
+
+  if (loading) return null
+  if (contacts.length === 0) return null
+
+  return (
+    <Card padding="md">
+      <div className="flex items-center gap-2 mb-3">
+        <Users className="w-4 h-4 text-ws-text-secondary" />
+        <h3 className="text-xs font-semibold text-ws-text-secondary uppercase tracking-wide">
+          Team ({contacts.length})
+        </h3>
+      </div>
+      <table className="w-full text-sm">
+        <thead>
+          <tr className="text-left text-xs text-ws-text-secondary">
+            <th className="pb-1 font-medium">Role</th>
+            <th className="pb-1 font-medium">Name</th>
+            <th className="pb-1 font-medium">Company</th>
+            <th className="pb-1 font-medium">Email</th>
+          </tr>
+        </thead>
+        <tbody>
+          {contacts.map(c => (
+            <tr key={c.id} className="border-t border-ws-panel-border/50">
+              <td className="py-1.5 text-ws-fg">
+                <div className="flex items-center gap-1.5">
+                  <span>{formatRole(c.role)}</span>
+                  {c.is_primary && <Badge variant="light" size="xs">Primary</Badge>}
+                </div>
+              </td>
+              <td className="py-1.5 text-ws-fg">{c.contact_name}</td>
+              <td className="py-1.5 text-ws-text-secondary">{c.contact_company}</td>
+              <td className="py-1.5 text-ws-text-secondary">{c.contact_email}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </Card>
+  )
+}
+
+// ---------------------------------------------------------------------------
+// Identity Card (editable)
+// ---------------------------------------------------------------------------
+
+function IdentityCard({ project, onUpdate }: { project: ProjectRecord; onUpdate: (p: ProjectRecord) => void }) {
+  const [editing, setEditing] = useState(false)
+  const [saving, setSaving] = useState(false)
+  const [draft, setDraft] = useState({
+    artwork_title: project.intake?.artwork_title ?? '',
+    civic_address: project.intake?.civic_address ?? '',
+    legal_address: (project as any).legal_address ?? '',
+    neighbourhood: project.intake?.neighbourhood ?? '',
+    developer_name: project.developer_name ?? '',
+  })
+
+  const fields = [
+    { key: 'developer_name', label: 'Developer Entity' },
+    { key: 'artwork_title', label: 'Artwork Title' },
+    { key: 'civic_address', label: 'Civic Address' },
+    { key: 'legal_address', label: 'Legal Address' },
+    { key: 'neighbourhood', label: 'Neighbourhood' },
+  ] as const
+
+  const save = async () => {
+    setSaving(true)
+    try {
+      const changed: Record<string, string> = {}
+      for (const f of fields) {
+        const val = draft[f.key]
+        if (val) changed[f.key] = val
+      }
+      await api.projects.updateIdentity(project.id, changed)
+      // Refresh
+      const updated = await api.projects.get(project.id)
+      onUpdate(updated)
+      setEditing(false)
+    } catch {}
+    setSaving(false)
+  }
+
+  return (
+    <Card padding="md">
+      <div className="flex items-center justify-between mb-3">
+        <h3 className="text-xs font-semibold text-ws-text-secondary uppercase tracking-wide">Identity</h3>
+        {!editing ? (
+          <button className="text-ws-text-secondary hover:text-ws-fg" onClick={() => setEditing(true)}>
+            <Pencil className="w-3.5 h-3.5" />
+          </button>
+        ) : (
+          <div className="flex gap-1.5">
+            <button className="text-ws-accent" onClick={save} disabled={saving}><Check className="w-4 h-4" /></button>
+            <button className="text-ws-text-secondary" onClick={() => setEditing(false)}><X className="w-4 h-4" /></button>
+          </div>
+        )}
+      </div>
+      <div className="flex flex-col gap-2 text-sm">
+        {fields.map(f => (
+          <div key={f.key} className="flex justify-between items-center gap-4">
+            <span className="text-ws-text-secondary whitespace-nowrap">{f.label}</span>
+            {editing ? (
+              <input
+                className="setting-input text-right flex-1"
+                value={draft[f.key]}
+                onChange={e => setDraft(prev => ({ ...prev, [f.key]: e.target.value }))}
+                style={{ maxWidth: 300 }}
+              />
+            ) : (
+              <span className={draft[f.key] ? 'text-ws-fg' : 'text-ws-text-disabled'}>
+                {draft[f.key] || 'Not set'}
+              </span>
+            )}
+          </div>
+        ))}
+      </div>
+    </Card>
+  )
+}
+
+// ---------------------------------------------------------------------------
+// Close-out Fields Card (editable)
+// ---------------------------------------------------------------------------
+
+const CLOSEOUT_FIELDS = [
+  { key: 'install_date', label: 'Install Date' },
+  { key: 'agreement_date', label: 'Agreement Date' },
+  { key: 'agreement_section', label: 'Agreement Section' },
+  { key: 'declarant_name', label: 'Declarant Name' },
+  { key: 'declarant_title', label: 'Declarant Title' },
+  { key: 'declarant_address', label: 'Declarant Address' },
+  { key: 'declaration_city', label: 'Declaration City' },
+  { key: 'declaration_date', label: 'Declaration Date' },
+  { key: 'final_report_author', label: 'Final Report Author' },
+  { key: 'registration_type', label: 'Registration Type' },
+  { key: 'registration_number', label: 'Registration Number' },
+] as const
+
+function CloseOutCard({ project, onUpdate }: { project: ProjectRecord; onUpdate: (p: ProjectRecord) => void }) {
+  const [editing, setEditing] = useState(false)
+  const [saving, setSaving] = useState(false)
+  const [draft, setDraft] = useState<Record<string, string>>(() => {
+    const d: Record<string, string> = {}
+    for (const f of CLOSEOUT_FIELDS) d[f.key] = (project as any)[f.key] ?? ''
+    return d
+  })
+
+  const filledCount = CLOSEOUT_FIELDS.filter(f => draft[f.key]).length
+
+  const save = async () => {
+    setSaving(true)
+    try {
+      const changed: Record<string, string> = {}
+      for (const f of CLOSEOUT_FIELDS) {
+        if (draft[f.key]) changed[f.key] = draft[f.key]
+      }
+      await api.projects.updateLegalFields(project.id, changed)
+      const updated = await api.projects.get(project.id)
+      onUpdate(updated)
+      setEditing(false)
+    } catch {}
+    setSaving(false)
+  }
+
+  return (
+    <Card padding="md">
+      <div className="flex items-center justify-between mb-3">
+        <h3 className="text-xs font-semibold text-ws-text-secondary uppercase tracking-wide">
+          Close-out Fields ({filledCount}/{CLOSEOUT_FIELDS.length})
+        </h3>
+        {!editing ? (
+          <button className="text-ws-text-secondary hover:text-ws-fg" onClick={() => setEditing(true)}>
+            <Pencil className="w-3.5 h-3.5" />
+          </button>
+        ) : (
+          <div className="flex gap-1.5">
+            <button className="text-ws-accent" onClick={save} disabled={saving}><Check className="w-4 h-4" /></button>
+            <button className="text-ws-text-secondary" onClick={() => setEditing(false)}><X className="w-4 h-4" /></button>
+          </div>
+        )}
+      </div>
+      <div className="flex flex-col gap-2 text-sm">
+        {CLOSEOUT_FIELDS.map(f => (
+          <div key={f.key} className="flex justify-between items-center gap-4">
+            <span className="text-ws-text-secondary whitespace-nowrap">{f.label}</span>
+            {editing ? (
+              <input
+                className="setting-input text-right flex-1"
+                value={draft[f.key]}
+                onChange={e => setDraft(prev => ({ ...prev, [f.key]: e.target.value }))}
+                style={{ maxWidth: 300 }}
+              />
+            ) : (
+              <span className={draft[f.key] ? 'text-ws-fg' : 'text-ws-text-disabled'}>
+                {draft[f.key] || 'PENDING'}
+              </span>
+            )}
+          </div>
+        ))}
+      </div>
+    </Card>
+  )
+}
+
+// ---------------------------------------------------------------------------
+// Legal Letters Widget
+// ---------------------------------------------------------------------------
+
+interface LetterStatus {
+  template_key: string
+  template_name: string
+  total_fields: number
+  filled_count: number
+  unfilled_count: number
+}
+
+function LegalLettersWidget({ projectId }: { projectId: string }) {
+  const [letters, setLetters] = useState<LetterStatus[]>([])
+  const [loading, setLoading] = useState(true)
+
+  useEffect(() => {
+    api.legalLetters.forProject(projectId)
+      .then(data => setLetters(data.letters))
+      .catch(() => {})
+      .finally(() => setLoading(false))
+  }, [projectId])
+
+  if (loading || letters.length === 0) return null
+
+  return (
+    <Card padding="md">
+      <div className="flex items-center justify-between mb-3">
+        <div className="flex items-center gap-2">
+          <FileText className="w-4 h-4 text-ws-text-secondary" />
+          <h3 className="text-xs font-semibold text-ws-text-secondary uppercase tracking-wide">
+            Legal Letters
+          </h3>
+        </div>
+        <Button
+          variant="ghost"
+          size="xs"
+          onClick={() => { window.location.href = '/legal-letters' }}
+        >
+          Open Generator
+        </Button>
+      </div>
+      <div className="flex flex-col gap-1.5 text-sm">
+        {letters.map(l => (
+          <div key={l.template_key} className="flex items-center justify-between">
+            <span className="text-ws-fg">{l.template_name}</span>
+            <div className="flex items-center gap-2">
+              <span className="text-ws-text-secondary tabular-nums">{l.filled_count}/{l.total_fields}</span>
+              {l.unfilled_count === 0
+                ? <Badge variant="success" size="xs">Complete</Badge>
+                : <Badge variant="warning" size="xs">{l.unfilled_count} pending</Badge>
+              }
+            </div>
+          </div>
+        ))}
+      </div>
+    </Card>
+  )
+}
+
+// ---------------------------------------------------------------------------
+// OneDrive Link
+// ---------------------------------------------------------------------------
+
+function OneDriveLink({ projectId }: { projectId: string }) {
+  const [folder, setFolder] = useState<string | null>(null)
+
+  useEffect(() => {
+    api.projects.onedrive(projectId)
+      .then(data => { if (data.exists) setFolder(data.folder_path) })
+      .catch(() => {})
+  }, [projectId])
+
+  if (!folder) return null
+
+  return (
+    <button
+      className="flex items-center gap-1.5 text-xs text-ws-text-secondary hover:text-ws-fg"
+      onClick={() => { fetch(`/artists/open-file?path=${encodeURIComponent(folder)}`) }}
+    >
+      <FolderOpen className="w-3.5 h-3.5" />
+      <span>{folder.split('ALL PROJECTS\\').pop() ?? folder}</span>
+    </button>
+  )
+}
+
+// ---------------------------------------------------------------------------
 // Main Page
 // ---------------------------------------------------------------------------
 
@@ -313,19 +632,7 @@ export function ProjectDetailPage() {
           </p>
         </div>
 
-        {/* Provisioning warning */}
-        {project.status === 'provisioning' && (
-          <Card padding="md" className="border-ws-warning/30 bg-ws-warning/5">
-            <p className="text-sm text-ws-fg">
-              A previous provisioning attempt was interrupted. Check ClickUp for partial data before retrying.
-              {project.clickup_list_id && (
-                <> ClickUp list was created (ID: {project.clickup_list_id}).</>
-              )}
-            </p>
-          </Card>
-        )}
-
-        {/* Actions */}
+        {/* Actions + links */}
         <div className="flex items-center gap-3 flex-wrap">
           {project.status === 'draft' && (
             <Button
@@ -345,14 +652,32 @@ export function ProjectDetailPage() {
               rightSection={<ExternalLink className="w-3.5 h-3.5" />}
               onClick={() => window.open(clickupUrl, '_blank')}
             >
-              Open in ClickUp
+              ClickUp
             </Button>
           )}
+          {projectId && <OneDriveLink projectId={projectId} />}
         </div>
         {provisionError && <p className="text-sm text-ws-error">{provisionError}</p>}
+        {project.status === 'provisioning' && (
+          <p className="text-xs text-ws-warning">
+            Previous provisioning interrupted. Check ClickUp before retrying.
+          </p>
+        )}
+
+        {/* Identity */}
+        <IdentityCard project={project} onUpdate={setProject} />
+
+        {/* Team */}
+        {projectId && <TeamCard projectId={projectId} />}
 
         {/* Budget */}
         {project.budget && <BudgetCard budget={project.budget} />}
+
+        {/* Legal letters status */}
+        {projectId && <LegalLettersWidget projectId={projectId} />}
+
+        {/* Close-out fields */}
+        <CloseOutCard project={project} onUpdate={setProject} />
 
         {/* Stage breakdown */}
         {preview && preview.stages.length > 0 && (
@@ -365,24 +690,11 @@ export function ProjectDetailPage() {
         )}
 
         {/* Timestamps */}
-        <Card padding="md">
-          <div className="flex flex-col gap-2 text-sm">
-            <div className="flex items-center gap-2 text-ws-text-secondary">
-              <CalendarDays className="w-4 h-4" />
-              <span>Created {formatDate(project.created_at)}</span>
-            </div>
-            <div className="flex items-center gap-2 text-ws-text-secondary">
-              <Clock className="w-4 h-4" />
-              <span>Updated {formatDate(project.updated_at)}</span>
-            </div>
-            {project.provisioned_at && (
-              <div className="flex items-center gap-2 text-ws-text-secondary">
-                <Rocket className="w-4 h-4" />
-                <span>Provisioned {formatDate(project.provisioned_at)}</span>
-              </div>
-            )}
-          </div>
-        </Card>
+        <div className="flex flex-wrap gap-4 text-xs text-ws-text-secondary">
+          <span>Created {formatDate(project.created_at)}</span>
+          <span>Updated {formatDate(project.updated_at)}</span>
+          {project.provisioned_at && <span>Provisioned {formatDate(project.provisioned_at)}</span>}
+        </div>
       </div>
     </ModuleLayout>
   )

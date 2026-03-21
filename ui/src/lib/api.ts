@@ -239,6 +239,11 @@ export const api = {
     compose: (id: string, templateKey: string) =>
       post(`/api/projects/${id}/compose`, { template_key: templateKey }).then(r => r.json()),
     status: (id: string) => fetchJson<any>(`/api/projects/${id}/status`),
+    updateIdentity: (id: string, data: Record<string, string>) =>
+      put(`/api/projects/${id}/identity`, data).then(r => r.json()),
+    updateLegalFields: (id: string, data: Record<string, string>) =>
+      put(`/api/projects/${id}/legal-fields`, data).then(r => r.json()),
+    onedrive: (id: string) => fetchJson<{ folder_path: string | null; exists: boolean }>(`/api/projects/${id}/onedrive`),
     delete: (id: string) =>
       fetch(`/api/projects/${id}`, { method: 'DELETE' }).then(r => r.json()),
     policyMatrix: {
@@ -286,6 +291,24 @@ export const api = {
       }),
     updatePreambleSection: (uid: string, sectionName: string, html: string) =>
       put(`/api/bfa-todo/preambles/${uid}/sections/${sectionName}`, { html }).then(r => r.json()),
+  },
+
+  legalLetters: {
+    forProject: (projectId: string) =>
+      fetchJson<{
+        project_id: string; municipality: string;
+        letters: { template_key: string; template_name: string; total_fields: number; filled_count: number; unfilled_count: number }[];
+      }>(`/api/documents/docx/legal-letters/${projectId}`),
+    preview: (projectId: string, templateKey: string) =>
+      fetchJson<{
+        template_key: string; template_name: string; project_id: string;
+        total_fields: number; filled_count: number; unfilled_count: number;
+        fields: { field: string; value: string | null; filled: boolean }[];
+      }>(`/api/documents/docx/preview/${projectId}/${templateKey}`),
+    pipeline: (templateKey: string, projectId: string) =>
+      post('/api/documents/docx/pipeline', { template_key: templateKey, project_id: projectId }).then(r => r.json()),
+    updateFields: (projectId: string, fields: Record<string, string>) =>
+      put(`/api/projects/${projectId}/legal-fields`, fields).then(r => r.json()),
   },
 
   health: () => fetchJson<Record<string, unknown>>('/health'),

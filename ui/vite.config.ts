@@ -40,6 +40,7 @@ export default defineConfig({
         'system-policy-matrix': path.resolve(__dirname, 'system-policy-matrix.html'),
         'system-email-templates': path.resolve(__dirname, 'system-email-templates.html'),
         'bfa-todo': path.resolve(__dirname, 'bfa-todo.html'),
+        'legal-letters': path.resolve(__dirname, 'legal-letters.html'),
       },
     },
   },

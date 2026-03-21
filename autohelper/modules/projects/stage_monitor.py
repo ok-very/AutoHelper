@@ -1,7 +1,7 @@
 """
 Project stage monitor — polls ClickUp to determine current stage of provisioned projects.
 
-Given a project with a ClickUp list, fetches all tasks, reads the phase custom field,
+Given a project with a ClickUp list, fetches all tasks, reads the Stage custom field,
 checks completion status, and derives: which stage is active, which tasks are done/pending,
 and which email templates are ready to send.
 """

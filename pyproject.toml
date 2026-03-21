@@ -23,9 +23,11 @@ dependencies = [
     "requests>=2.31.0",
     # Scheduler for garbage collection
     "apscheduler>=3.10.0",
-    # Document text extraction
+    # Document text extraction + generation
     "pdfplumber>=0.10.0",
     "python-docx>=1.1.0",
+    "docxtpl>=0.18.0",
+    "docx2pdf>=0.1.8",
     # Filesystem watching (invoice watchdog)
     "watchdog>=4.0.0",
     # Felt API client (context maps)

@@ -37,6 +37,8 @@ class IntakeAnswers(BaseModel):
     project_type: ProjectType = ProjectType.PRIVATE_DEVELOPMENT
     project_name: str
     developer_name: str | None = None
+    artwork_title: str | None = None
+    civic_address: str | None = None
     neighbourhood: str | None = None
     construction_cost: float = 0.0
     unit_count: int | None = None
@@ -111,8 +113,6 @@ class ResolvedManifest(BaseModel):
     base_task_count: int = 0
     added_task_count: int = 0
     removed_task_count: int = 0
-    phase_field_id: str | None = None
-    phase_options: dict[str, str] = Field(default_factory=dict)
 
 
 # ── City config summary ──────────────────────────────────────────
@@ -147,6 +147,21 @@ class ProjectRecord(BaseModel):
     clickup_list_id: str | None = None
     clickup_folder_id: str | None = None
     clickup_workspace_id: str | None = None
+    clickup_stage_field_id: str | None = None
+    onedrive_folder: str | None = None
+    # Close-out / legal letter fields (filled by PM during project lifecycle)
+    legal_address: str | None = None  # Land title description (Lot/Block/Plan)
+    install_date: str | None = None
+    agreement_date: str | None = None
+    agreement_section: str | None = None
+    declarant_name: str | None = None
+    declarant_title: str | None = None
+    declarant_address: str | None = None
+    declaration_city: str | None = None
+    declaration_date: str | None = None
+    final_report_author: str | None = None
+    registration_type: str | None = None
+    registration_number: str | None = None
     status: ProjectStatus = ProjectStatus.DRAFT
     created_at: str = Field(default_factory=lambda: datetime.now().isoformat())
     updated_at: str = Field(default_factory=lambda: datetime.now().isoformat())

@@ -214,3 +214,31 @@ async def deploy_selected(req: DeploySelectedRequest) -> dict[str, Any]:
     except Exception as e:
         logger.error("Deploy selected failed: %s", e, exc_info=True)
         raise HTTPException(500, f"Deploy failed: {e}")
+
+
+@router.post("/sync-clickup")
+async def sync_clickup() -> dict[str, Any]:
+    """Pull provisioned projects from ClickUp into the To Do list.
+
+    Creates entries for new projects, updates phase for existing ones.
+    """
+    from .clickup_sync import sync_from_clickup
+    try:
+        return sync_from_clickup()
+    except Exception as e:
+        logger.error("ClickUp sync failed: %s", e, exc_info=True)
+        raise HTTPException(500, f"Sync failed: {e}")
+
+
+@router.post("/sync-clickup-stages")
+async def sync_clickup_stages() -> dict[str, Any]:
+    """Pull live task status from ClickUp and update To Do list phases.
+
+    Fetches actual task completion per stage from ClickUp.
+    """
+    from .clickup_sync import sync_with_stage_report
+    try:
+        return await sync_with_stage_report()
+    except Exception as e:
+        logger.error("Stage sync failed: %s", e, exc_info=True)
+        raise HTTPException(500, f"Stage sync failed: {e}")

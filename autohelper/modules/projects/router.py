@@ -259,6 +259,104 @@ async def project_status(project_id: str) -> dict:
     }
 
 
+class IdentityUpdate(BaseModel):
+    """Editable project identity fields."""
+    project_name: str | None = None
+    developer_name: str | None = None
+    artwork_title: str | None = None
+    civic_address: str | None = None
+    legal_address: str | None = None
+    neighbourhood: str | None = None
+
+
+@router.put("/{project_id}/identity")
+async def update_identity(project_id: str, body: IdentityUpdate) -> dict:
+    """Update project identity fields."""
+    from .store import get_project_store
+
+    store = get_project_store()
+    project = store.get(project_id)
+    if not project:
+        raise HTTPException(status_code=404, detail="Project not found")
+
+    updates = body.model_dump(exclude_none=True)
+    # Fields that live on intake
+    intake_fields = {"artwork_title", "civic_address", "neighbourhood", "developer_name"}
+    for k, v in updates.items():
+        if k in intake_fields:
+            setattr(project.intake, k, v)
+        if k == "project_name":
+            project.project_name = v
+            project.intake.project_name = v
+        if k == "developer_name":
+            project.developer_name = v
+        if k == "legal_address":
+            project.legal_address = v
+
+    from datetime import datetime
+    project.updated_at = datetime.now().isoformat()
+    store.save(project)
+
+    return {"updated": list(updates.keys()), "project_id": project_id}
+
+
+@router.get("/{project_id}/onedrive")
+async def get_onedrive_folder(project_id: str) -> dict:
+    """Detect the OneDrive project folder path."""
+    project = service.get_project(project_id)
+    if not project:
+        raise HTTPException(status_code=404, detail="Project not found")
+
+    from autohelper.modules.documents.project_files import find_project_folder
+    folder = find_project_folder(project.project_name)
+    return {
+        "project_id": project_id,
+        "folder_path": str(folder) if folder else None,
+        "exists": folder is not None and folder.is_dir(),
+    }
+
+
+class LegalFieldsUpdate(BaseModel):
+    """PM-editable close-out / legal letter fields."""
+    legal_address: str | None = None
+    install_date: str | None = None
+    agreement_date: str | None = None
+    agreement_section: str | None = None
+    declarant_name: str | None = None
+    declarant_title: str | None = None
+    declarant_address: str | None = None
+    declaration_city: str | None = None
+    declaration_date: str | None = None
+    final_report_author: str | None = None
+    registration_type: str | None = None
+    registration_number: str | None = None
+    artwork_title: str | None = None
+
+
+@router.put("/{project_id}/legal-fields")
+async def update_legal_fields(project_id: str, body: LegalFieldsUpdate) -> dict:
+    """Update close-out / legal letter fields on a project."""
+    from .store import get_project_store
+
+    store = get_project_store()
+    project = store.get(project_id)
+    if not project:
+        raise HTTPException(status_code=404, detail="Project not found")
+
+    updates = body.model_dump(exclude_none=True)
+    # artwork_title lives on intake
+    if "artwork_title" in updates:
+        project.intake.artwork_title = updates.pop("artwork_title")
+    for k, v in updates.items():
+        setattr(project, k, v)
+
+    from datetime import datetime
+    project.updated_at = datetime.now().isoformat()
+    store.save(project)
+
+    return {"updated": list(body.model_dump(exclude_none=True).keys()), "project_id": project_id}
+
+
 @router.delete("/{project_id}")
 async def delete_project(project_id: str) -> dict:
     """Delete a draft project."""

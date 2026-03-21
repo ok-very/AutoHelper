@@ -54,6 +54,11 @@ class HubContact:
     exchange_id: str | None = None
     clickup_contact_ref: str | None = None
     source: str = "manual"
+    street_address: str = ""
+    city: str = ""
+    state: str = ""
+    postal_code: str = ""
+    country: str = ""
     created_at: str = ""
     updated_at: str = ""
 
@@ -107,15 +112,22 @@ def _row_to_contact(row: tuple) -> HubContact:
         exchange_id=row[15],
         clickup_contact_ref=row[16],
         source=row[17] or "manual",
-        created_at=row[18] or "",
-        updated_at=row[19] or "",
+        street_address=row[18] or "",
+        city=row[19] or "",
+        state=row[20] or "",
+        postal_code=row[21] or "",
+        country=row[22] or "",
+        created_at=row[23] or "",
+        updated_at=row[24] or "",
     )
 
 
 CONTACT_COLUMNS = """id, first_name, last_name, full_name, company, job_title,
     email_primary, email_secondary, phone_business, phone_mobile,
     category, notes, confidence, staleness_label, last_seen,
-    exchange_id, clickup_contact_ref, source, created_at, updated_at"""
+    exchange_id, clickup_contact_ref, source,
+    street_address, city, state, postal_code, country,
+    created_at, updated_at"""
 
 
 # ── CRUD ─────────────────────────────────────────────────────────
@@ -158,6 +170,11 @@ def create_contact(
     staleness_label: str = "Active",
     last_seen: str | None = None,
     source: str = "manual",
+    street_address: str = "",
+    city: str = "",
+    state: str = "",
+    postal_code: str = "",
+    country: str = "",
 ) -> HubContact:
     """Create a new contact in the hub."""
     if not email_primary:
@@ -175,13 +192,15 @@ def create_contact(
            (id, first_name, last_name, full_name, company, job_title,
             email_primary, email_secondary, phone_business, phone_mobile,
             category, notes, confidence, staleness_label, last_seen,
-            source, created_at, updated_at)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+            source, street_address, city, state, postal_code, country,
+            created_at, updated_at)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
         (
             contact_id, first_name, last_name, full_name, company, job_title,
             email_primary.lower(), email_secondary, phone_business, phone_mobile,
             category, notes, confidence, staleness_label, last_seen,
-            source, now, now,
+            source, street_address, city, state, postal_code, country,
+            now, now,
         ),
     )
     db.commit()
@@ -196,6 +215,7 @@ def update_contact(contact_id: str, **fields: str | None) -> HubContact | None:
         "email_primary", "email_secondary", "phone_business", "phone_mobile",
         "category", "notes", "confidence", "staleness_label", "last_seen",
         "exchange_id", "clickup_contact_ref", "source",
+        "street_address", "city", "state", "postal_code", "country",
     }
     updates = {k: v for k, v in fields.items() if k in allowed}
     if not updates:
@@ -385,8 +405,10 @@ def get_contact_projects(contact_id: str) -> list[ContactAssociation]:
 def resolve_project_contact(project_id: str, role: str) -> HubContact | None:
     """Resolve the primary contact for a role on a project."""
     db = get_db()
+    # Prefix columns with c. to avoid ambiguity with pca.id
+    cols = ", ".join(f"c.{col.strip()}" for col in CONTACT_COLUMNS.split(","))
     row = db.execute(
-        f"""SELECT {CONTACT_COLUMNS} FROM contacts c
+        f"""SELECT {cols} FROM contacts c
             JOIN project_contact_associations pca ON pca.contact_id = c.id
             WHERE pca.project_id = ? AND pca.role = ? AND pca.is_primary = 1
             LIMIT 1""",
@@ -428,7 +450,7 @@ def resolve_merge_fields(project_id: str) -> dict[str, str]:
     Used by compose_email() to fill {{name}}, {{developer_contact_name}}, etc.
     """
     role_to_field = {
-        "developer": ["developer_contact_name", "developer_name"],
+        "developer": ["developer_contact_name"],
         "city_planner": ["city_contact_name", "city_planner_name"],
         "architect": ["architect_name"],
         "landscape_architect": ["landscape_architect_name"],

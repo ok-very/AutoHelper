@@ -287,6 +287,4 @@ def resolve_template(intake: IntakeAnswers) -> ResolvedManifest:
         base_task_count=base_count,
         added_task_count=added_count,
         removed_task_count=removed_count,
-        phase_field_id=template.get("phase_field_id"),
-        phase_options=template.get("phase_options", {}),
     )

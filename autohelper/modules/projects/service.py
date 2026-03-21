@@ -44,12 +44,14 @@ def _get_token() -> str:
     return token
 
 
-def _get_folder_id() -> str:
+def _get_folder_or_space_id() -> tuple[str | None, str | None]:
+    """Return (folder_id, space_id). At least one must be set."""
     settings = get_settings()
-    folder_id = settings.clickup_folder_id  # type: ignore[attr-defined]
-    if not folder_id:
-        raise ValueError("clickup_folder_id not configured")
-    return folder_id
+    folder_id = settings.clickup_folder_id or None  # type: ignore[attr-defined]
+    space_id = settings.clickup_space_id or None  # type: ignore[attr-defined]
+    if not folder_id and not space_id:
+        raise ValueError("clickup_folder_id or clickup_space_id must be configured")
+    return folder_id, space_id
 
 
 # ── Read operations ──────────────────────────────────────────────
@@ -267,7 +269,7 @@ async def provision_project(project_id: str) -> ProjectRecord:
     1. Re-resolve template from saved intake
     2. Mark project as PROVISIONING (prevents double-trigger)
     3. Create ClickUp list in the configured folder
-    4. Create all tasks (parents first, then children) with phase field
+    4. Create Stage dropdown field, then all tasks (parents first, then children)
     5. Wire dependencies
     6. Update project record with ClickUp IDs → PROVISIONED
     """
@@ -287,7 +289,7 @@ async def provision_project(project_id: str) -> ProjectRecord:
     manifest = resolve_template(project.intake)
 
     token = _get_token()
-    folder_id = _get_folder_id()
+    folder_id, space_id = _get_folder_or_space_id()
     settings = get_settings()
     workspace_id = settings.clickup_workspace_id  # type: ignore[attr-defined]
 
@@ -298,9 +300,28 @@ async def provision_project(project_id: str) -> ProjectRecord:
 
     try:
         async with ClickUp(token) as cu:
-            # Create list
-            list_name = f"{project.project_name}"
-            cu_list = await cu.lists.create(folder_id, list_name)
+            # Create folder if none specified — derive name from project
+            # For phased projects (e.g., "Starlight - Lougheed P1"), strip phase suffix for folder
+            if not folder_id and space_id:
+                import re
+                folder_name = re.sub(r'\s*P\d+$', '', project.project_name).strip()
+                # Check if folder already exists (phased project reuse)
+                existing_folders = await cu.spaces.get_folders(space_id)
+                existing = next((f for f in existing_folders if f.name == folder_name), None)
+                if existing:
+                    folder_id = existing.id
+                    logger.info("Reusing existing folder %s: %s", folder_id, folder_name)
+                else:
+                    new_folder = await cu.client.post(f"/space/{space_id}/folder", body={"name": folder_name})
+                    folder_id = new_folder["id"]
+                    logger.info("Created folder %s: %s", folder_id, folder_name)
+
+            # Create list inside folder
+            list_name = project.project_name
+            if folder_id:
+                cu_list = await cu.lists.create(folder_id, list_name)
+            else:
+                cu_list = await cu.lists.create_in_space(space_id, list_name)  # type: ignore[arg-type]
             list_id = cu_list.id
             logger.info("Created ClickUp list %s: %s", list_id, list_name)
 
@@ -310,9 +331,34 @@ async def provision_project(project_id: str) -> ProjectRecord:
             project.clickup_workspace_id = workspace_id or None
             store.save(project)
 
-            # Phase custom field metadata
-            phase_field_id = manifest.phase_field_id
-            phase_options = manifest.phase_options
+            # Create "Stage" dropdown custom field on the new list
+            stage_field_id: str | None = None
+            stage_options: dict[str, str] = {}  # stage number → option ID
+            try:
+                field_result = await cu.client.post(f"/list/{list_id}/field", body={
+                    "name": "Stage",
+                    "type": "drop_down",
+                    "type_config": {
+                        "options": [
+                            {"name": f"{s.number}. {s.name}"}
+                            for s in manifest.stages
+                        ],
+                    },
+                })
+                field_data = field_result["field"]
+                stage_field_id = field_data["id"]
+                # Map stage numbers to the returned option IDs
+                for opt in field_data["type_config"]["options"]:
+                    # Option name format: "1. PROJECT INITIATION"
+                    stage_num = opt["name"].split(".")[0].strip()
+                    stage_options[stage_num] = opt["id"]
+                logger.info("Created Stage field %s with %d options", stage_field_id, len(stage_options))
+
+                # Persist field ID on project record
+                project.clickup_stage_field_id = stage_field_id
+                store.save(project)
+            except Exception as e:
+                logger.error("Failed to create Stage custom field: %s", e)
 
             # Create tasks — parents first, then children
             id_map: dict[str, str] = {}
@@ -342,14 +388,14 @@ async def provision_project(project_id: str) -> ProjectRecord:
                     created = await cu.tasks.create(list_id, create_data)
                     id_map[task.temp_id] = created.id
 
-                    # Set phase custom field
-                    if phase_field_id:
-                        option_id = phase_options.get(str(task.stage))
+                    # Set Stage custom field
+                    if stage_field_id:
+                        option_id = stage_options.get(str(task.stage))
                         if option_id:
                             try:
-                                await cu.custom_fields.set(created.id, phase_field_id, option_id)
+                                await cu.custom_fields.set(created.id, stage_field_id, option_id)
                             except Exception as e:
-                                logger.warning("Failed to set phase on %s: %s", task.temp_id, e)
+                                logger.warning("Failed to set stage on %s: %s", task.temp_id, e)
 
                     # Throttle to stay under ClickUp rate limits
                     await asyncio.sleep(0.15)

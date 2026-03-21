@@ -318,11 +318,36 @@ def render_one(project_data: dict) -> str:
     return inlined
 
 
+def _update_preamble_date(projects: list) -> None:
+    """Update the heading date in the main preamble to today."""
+    import re
+    from datetime import datetime
+
+    now = datetime.now()
+    today = f"{now.strftime('%B')} {now.day}, {now.year}"
+
+    for p in projects:
+        if p.get("type") != "preamble":
+            continue
+        content = p.get("sections", {}).get("content", {})
+        text = content.get("text", "")
+        html = content.get("html", "")
+        # Replace "To Do List <Month Day, Year>" with current date
+        pattern = r"To Do List\s+\w+ \d{1,2},?\s*\d{4}"
+        replacement = f"To Do List {today}"
+        if re.search(pattern, text):
+            content["text"] = re.sub(pattern, replacement, text)
+        if re.search(pattern, html):
+            content["html"] = re.sub(pattern, replacement, html)
+
+
 def render_all(projects, gdocs_css):
     """Compute styled runs + render site + JSON + GDocs inject.
 
     Shared entry point used by both run.py and reconcile.py.
     """
+    _update_preamble_date(projects)
+
     resolver = StyleResolver(gdocs_css)
     for p in projects:
         if p.get("type") == "project":

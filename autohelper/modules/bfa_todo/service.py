@@ -595,9 +595,193 @@ async def deploy_selected(doc_id: str, uids: list[str]) -> dict[str, Any]:
 
 
 async def deploy_to_gdocs(doc_id: str) -> dict[str, Any]:
-    """Push all GDocs injection payloads to a Google Doc."""
+    """Push full To Do list to a Google Doc.
+
+    For blank/new docs: inserts all content sequentially (preambles + projects).
+    For existing docs with anchors: updates in place.
+    """
+    # First try: check if doc has content (anchor-based update)
     payloads = _load_gdocs_payloads()
     if payloads is None:
         return {"error": "No GDocs payloads found. Run render first."}
 
-    return await _deploy_payloads(doc_id, payloads)
+    client = GoogleDocsClient()
+    try:
+        doc = await client.get_document(doc_id)
+    except GoogleClientError as e:
+        return {"error": str(e)}
+
+    # Check if doc has content
+    doc_text = ""
+    for element in doc.get("body", {}).get("content", []):
+        paragraph = element.get("paragraph")
+        if paragraph:
+            for el in paragraph.get("elements", []):
+                text_run = el.get("textRun")
+                if text_run:
+                    doc_text += text_run.get("content", "")
+
+    if doc_text.strip():
+        # Existing doc with content — use anchor-based update
+        return await _deploy_payloads(doc_id, payloads)
+
+    # Blank doc — insert everything sequentially
+    return await _deploy_full(doc_id, payloads)
+
+
+async def _deploy_full(
+    doc_id: str, payloads: list[dict[str, Any]]
+) -> dict[str, Any]:
+    """Deploy full content to a blank Google Doc with styling.
+
+    Builds the complete document in one pass:
+    1. Preamble text
+    2. For each project: anchor (header) + body text
+    Then applies all styling with absolute indices.
+    """
+    import re
+    from datetime import datetime
+
+    client = GoogleDocsClient()
+
+    _ensure_seeded()
+    projects = _project_repo.get_all(include_archived=False)
+
+    # Build preamble text
+    preamble_text = ""
+    preambles = [p for p in projects if p.get("type") in ("preamble", "preamble-lists")]
+    preambles.sort(key=lambda p: 0 if p["type"] == "preamble" else 1)
+    for preamble in preambles:
+        content = preamble.get("sections", {}).get("content", {})
+        text = content.get("text", "").strip()
+        if text:
+            now = datetime.now()
+            text = re.sub(
+                r"To Do List\s+\w+ \d{1,2},?\s*\d{4}",
+                f"To Do List {now.strftime('%B')} {now.day}, {now.year}",
+                text,
+            )
+            preamble_text += text + "\n\n"
+
+    # Build full document text and collect style requests with absolute indices
+    full_text = preamble_text
+    all_style_requests = []
+
+    # Map payload slugs for ordering
+    payload_map = {p["slug"]: p for p in payloads}
+
+    # Use project order from repo (matches the rendered order)
+    project_list = [p for p in projects if p.get("type") == "project"]
+    for project in project_list:
+        slug = project.get("slug", "")
+        payload = payload_map.get(slug)
+
+        # Always insert the header/anchor
+        header = project.get("header", {}).get("text", "")
+        if not header:
+            fields = project.get("fields", {})
+            owner = fields.get("owner_team", "")
+            header = f"({owner}) {fields.get('project_name', 'TBC')}, {fields.get('city', 'TBC')}"
+
+        anchor_start = len(full_text)
+        full_text += header + "\n"
+        anchor_end = len(full_text) - 1
+
+        # Bold + underline the header
+        all_style_requests.append(("bold", anchor_start, anchor_end))
+        all_style_requests.append(("underline", anchor_start, anchor_end))
+
+        if payload:
+            # Insert body text from the payload
+            for req in payload["requests"]:
+                if "insertText" in req:
+                    body_text = req["insertText"]["text"]
+                    insert_offset = len(full_text)
+                    full_text += body_text
+
+                    # Resolve style requests from payload
+                    for style_req in payload["requests"]:
+                        if "updateTextStyle" not in style_req:
+                            continue
+                        uts = style_req["updateTextStyle"]
+                        rng = uts["range"]
+                        # Parse __OFFSET__+N
+                        start_str = str(rng["startIndex"])
+                        end_str = str(rng["endIndex"])
+                        if "__OFFSET__+" in start_str:
+                            rel_start = int(start_str.split("+")[1])
+                            rel_end = int(end_str.split("+")[1])
+                            abs_start = insert_offset + rel_start
+                            abs_end = insert_offset + rel_end
+                            all_style_requests.append((
+                                uts["fields"],
+                                abs_start,
+                                abs_end,
+                                uts["textStyle"],
+                            ))
+                    break  # only one insertText per payload
+
+        full_text += "\n"
+
+    if not full_text.strip():
+        return {"error": "No content to deploy"}
+
+    # Build API requests
+    # 1. Insert all text at index 1
+    requests = [{"insertText": {"location": {"index": 1}, "text": full_text}}]
+
+    # 2. Style requests with absolute indices (+1 for doc index offset)
+    for item in all_style_requests:
+        if len(item) == 3:
+            style_type, start, end = item
+            if style_type == "bold":
+                ts, fields = {"bold": True}, "bold"
+            elif style_type == "underline":
+                ts, fields = {"underline": True}, "underline"
+            else:
+                continue
+        elif len(item) == 4:
+            fields, start, end, ts = item
+        else:
+            continue
+
+        if start < end:
+            requests.append({
+                "updateTextStyle": {
+                    "range": {"startIndex": start + 1, "endIndex": end + 1},
+                    "textStyle": ts,
+                    "fields": fields,
+                }
+            })
+
+    logger.info("Full deploy: %d chars, %d style requests", len(full_text), len(requests) - 1)
+
+    # Batch in chunks to avoid quota issues
+    CHUNK = 500
+    deployed = 0
+    errors = []
+    for i in range(0, len(requests), CHUNK):
+        chunk = requests[i:i + CHUNK]
+        try:
+            await client.batch_update(doc_id, chunk)
+            deployed += len(chunk)
+        except GoogleClientError as e:
+            if "429" in str(e):
+                import asyncio as aio
+                await aio.sleep(65)
+                try:
+                    await client.batch_update(doc_id, chunk)
+                    deployed += len(chunk)
+                except GoogleClientError as e2:
+                    errors.append(str(e2)[:100])
+            else:
+                errors.append(str(e)[:100])
+
+    return {
+        "deployed": len([p for p in projects if p.get("type") == "project"]),
+        "requests_sent": deployed,
+        "errors": len(errors),
+        "error_details": errors,
+        "method": "full_insert_styled",
+        "total_chars": len(full_text),
+    }

@@ -95,6 +95,15 @@ export const MODULES: Record<string, ModuleConfig> = {
     ],
     status: 'active',
   },
+  'legal-letters': {
+    name: 'Legal Letters',
+    description: 'Generate close-out legal documents for provisioned projects',
+    emoji: '\uD83D\uDCDD',
+    pages: [
+      { key: 'overview', label: 'Legal Letters', href: '/legal-letters', icon: 'FileText' },
+    ],
+    status: 'active',
+  },
   'analytics': {
     name: 'Analytics',
     description: 'Usage metrics, service health, and system overview',

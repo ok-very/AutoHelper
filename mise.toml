@@ -4,6 +4,7 @@ node = "24"
 
 [env]
 VIRTUAL_ENV = "{{config_root}}/.venv"
+PYTHONIOENCODING = "utf-8"
 _.path = ["{{config_root}}/.venv/Scripts"]
 _.file = [".env", ".env.agent"]
 

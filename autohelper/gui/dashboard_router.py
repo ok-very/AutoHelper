@@ -2,7 +2,7 @@
 
 from pathlib import Path
 
-from fastapi import APIRouter
+from fastapi import APIRouter, Request
 from fastapi.responses import FileResponse, RedirectResponse
 from starlette.staticfiles import StaticFiles
 
@@ -24,9 +24,11 @@ router = APIRouter()
 
 
 # ── Landing page ──────────────────────────────────────────────────
-@router.get("/", include_in_schema=False)
-async def home_page() -> FileResponse:
-    """Serve the landing page."""
+@router.get("/", include_in_schema=False, response_model=None)
+async def home_page(request: Request):
+    """Serve the landing page, or forward ClickUp OAuth callback."""
+    if request.query_params.get("code"):
+        return RedirectResponse(f"/clickup/callback?{request.query_params}")
     return FileResponse(_ARTISTS_SERVE / "home.html", media_type="text/html", headers=_NO_CACHE)
 
 
@@ -132,6 +134,11 @@ async def system_email_templates() -> FileResponse:
 @router.get("/bfa-todo", include_in_schema=False)
 async def bfa_todo() -> FileResponse:
     return FileResponse(_ARTISTS_SERVE / "bfa-todo.html", media_type="text/html", headers=_NO_CACHE)
+
+
+@router.get("/legal-letters", include_in_schema=False)
+async def legal_letters() -> FileResponse:
+    return FileResponse(_ARTISTS_SERVE / "legal-letters.html", media_type="text/html", headers=_NO_CACHE)
 
 
 @router.get("/analytics", include_in_schema=False)

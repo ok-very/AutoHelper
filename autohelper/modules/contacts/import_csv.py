@@ -38,6 +38,18 @@ COLUMN_MAP: dict[str, str] = {
     "category": "category",
     "email": "email_primary",
     "name": "full_name",
+    # Outlook export format (normalized: lowercase, spaces/hyphens → underscores)
+    "e_mail_address": "email_primary",
+    "e_mail_2_address": "email_secondary",
+    "business_phone": "phone_business",
+    "mobile_phone": "phone_mobile",
+    "business_street": "street_address",
+    "business_city": "city",
+    "business_state": "state",
+    "business_postal_code": "postal_code",
+    "business_country/region": "country",
+    "categories": "category",
+    "notes": "notes",
 }
 
 
@@ -121,6 +133,7 @@ def import_contacts_csv(
                         email_secondary = ?, phone_business = ?, phone_mobile = ?,
                         category = ?, notes = ?,
                         confidence = ?, staleness_label = ?, last_seen = ?,
+                        street_address = ?, city = ?, state = ?, postal_code = ?, country = ?,
                         source = CASE WHEN source = 'manual' THEN source ELSE 'import' END,
                         updated_at = ?
                        WHERE id = ?""",
@@ -138,6 +151,11 @@ def import_contacts_csv(
                         data.get("confidence", "MEDIUM"),
                         data.get("staleness_label", "Active"),
                         data.get("last_seen"),
+                        data.get("street_address", ""),
+                        data.get("city", ""),
+                        data.get("state", ""),
+                        data.get("postal_code", ""),
+                        data.get("country", ""),
                         now,
                         existing[0],
                     ),
@@ -151,8 +169,9 @@ def import_contacts_csv(
                        (id, first_name, last_name, full_name, company, job_title,
                         email_primary, email_secondary, phone_business, phone_mobile,
                         category, notes, confidence, staleness_label, last_seen,
+                        street_address, city, state, postal_code, country,
                         source, created_at, updated_at)
-                       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'import', ?, ?)""",
+                       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'import', ?, ?)""",
                     (
                         contact_id,
                         data.get("first_name", ""),
@@ -169,6 +188,11 @@ def import_contacts_csv(
                         data.get("confidence", "MEDIUM"),
                         data.get("staleness_label", "Active"),
                         data.get("last_seen"),
+                        data.get("street_address", ""),
+                        data.get("city", ""),
+                        data.get("state", ""),
+                        data.get("postal_code", ""),
+                        data.get("country", ""),
                         now,
                         now,
                     ),

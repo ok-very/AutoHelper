@@ -7,21 +7,6 @@
     "folder_id": "90144269771",
     "list_id": "901414366813"
   },
-  "phase_field_id": "4abc75c1-c264-43c5-87a9-f116ad09e0fa",
-  "phase_options": {
-    "1": "eb7af0e2-174d-40e3-835e-c46cf00cb90f",
-    "2": "54f30092-2365-494d-8527-694b453872d9",
-    "3": "d915bc10-5ee9-43df-b8fd-52396d1a6674",
-    "4": "d915bc10-5ee9-43df-b8fd-52396d1a6674",
-    "5": "27ee5137-9f71-480d-a13a-cdbc7ebe0a0e",
-    "6": "7f3a0b97-425a-4ca3-a05c-3f3b35ce590e",
-    "7": "3e54fd5c-5243-49cb-9c76-a1ccee4a0d51",
-    "8": "9a54c988-2f31-4e55-a9ba-bdb246cc67b3",
-    "9": "3a3f7c7f-d949-4fc9-afd8-580fbffe4f64",
-    "10": "f040f8c7-f4c3-4b75-89f1-69273bef15df",
-    "11": "30c99a30-8328-4ee4-9181-01b61a80defd"
-  },
-  "fab_100_option": "b64cea4a-43a6-4e17-b1db-050d55e86b74",
   "stages": [
     {
       "number": 1,

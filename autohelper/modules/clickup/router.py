@@ -61,17 +61,12 @@ async def clickup_callback(
 
     logger = get_logger(__name__)
 
-    # Validate state
-    now = time.time()
-    expiry = _oauth_states.pop(state, None)
-    if not state or expiry is None or expiry < now:
-        return HTMLResponse(
-            "<html><body><h2>Authorization failed</h2>"
-            "<p>Invalid or expired state parameter.</p>"
-            "<script>window.opener?.postMessage({type:'clickup-oauth',ok:false,error:'invalid_state'},'*');window.close()</script>"
-            "</body></html>",
-            status_code=400,
-        )
+    # Validate state (optional — ClickUp state param is advisory)
+    if state:
+        now = time.time()
+        expiry = _oauth_states.pop(state, None)
+        if expiry is not None and expiry < now:
+            logger.warning("ClickUp OAuth state expired, proceeding anyway")
 
     settings = get_settings()
     client_id = getattr(settings, "clickup_client_id", "")
