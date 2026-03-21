@@ -216,6 +216,30 @@ async def deploy_selected(req: DeploySelectedRequest) -> dict[str, Any]:
         raise HTTPException(500, f"Deploy failed: {e}")
 
 
+class DeployDocxRequest(BaseModel):
+    file_id: str
+
+
+@router.post("/deploy-docx")
+async def deploy_docx(req: DeployDocxRequest) -> dict[str, Any]:
+    """Render pipeline → HTML → Word COM → .docx → upload to Google Drive."""
+    from .docx_renderer import render_todo_docx, upload_to_drive
+
+    # Ensure render pipeline has run (produces index_pasteable.html)
+    try:
+        service.render_pipeline()
+    except Exception as e:
+        logger.warning("Render pipeline warning: %s", e)
+
+    # Generate .docx via Word COM from the rendered HTML
+    docx_path = render_todo_docx()
+
+    # Upload to Drive
+    result = await upload_to_drive(docx_path, req.file_id)
+    result["docx_path"] = str(docx_path)
+    return result
+
+
 @router.post("/sync-clickup")
 async def sync_clickup() -> dict[str, Any]:
     """Pull provisioned projects from ClickUp into the To Do list.
@@ -228,6 +252,51 @@ async def sync_clickup() -> dict[str, Any]:
     except Exception as e:
         logger.error("ClickUp sync failed: %s", e, exc_info=True)
         raise HTTPException(500, f"Sync failed: {e}")
+
+
+@router.post("/import-docx")
+async def import_docx(
+    filepath: str | None = None,
+) -> dict[str, Any]:
+    """Parse a .docx file and return deltas against the DB for review.
+
+    Defaults to the current todo_list.docx if no path given.
+    """
+    from .service import import_from_docx
+    from .pipeline import config
+
+    if not filepath:
+        filepath = str(config.SITE_DIR / "todo_list.docx")
+
+    try:
+        return import_from_docx(filepath)
+    except FileNotFoundError as e:
+        raise HTTPException(404, str(e))
+    except Exception as e:
+        logger.error("Docx import failed: %s", e, exc_info=True)
+        raise HTTPException(500, f"Import failed: {e}")
+
+
+@router.post("/apply-deltas")
+async def apply_deltas(deltas: list[dict[str, Any]]) -> dict[str, Any]:
+    """Apply confirmed deltas from .docx import to the DB."""
+    from .service import apply_docx_deltas
+    try:
+        return apply_docx_deltas(deltas)
+    except Exception as e:
+        logger.error("Delta apply failed: %s", e, exc_info=True)
+        raise HTTPException(500, f"Apply failed: {e}")
+
+
+@router.post("/push-to-clickup")
+async def push_to_clickup(uids: list[str]) -> dict[str, Any]:
+    """Push BFA entry changes to ClickUp for specified project UIDs."""
+    from .service import push_changes_to_clickup
+    try:
+        return await push_changes_to_clickup(uids)
+    except Exception as e:
+        logger.error("ClickUp push failed: %s", e, exc_info=True)
+        raise HTTPException(500, f"Push failed: {e}")
 
 
 @router.post("/sync-clickup-stages")

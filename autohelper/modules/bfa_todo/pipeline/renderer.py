@@ -350,11 +350,10 @@ def render_all(projects, gdocs_css):
 
     resolver = StyleResolver(gdocs_css)
     for p in projects:
-        if p.get("type") == "project":
-            for sec_data in p.get("sections", {}).values():
-                html = sec_data.get("html", "")
-                if html.strip() and "runs" not in sec_data:
-                    sec_data["runs"] = walk_html_for_runs(html, resolver)
+        for sec_data in p.get("sections", {}).values():
+            html = sec_data.get("html", "")
+            if html.strip() and "runs" not in sec_data:
+                sec_data["runs"] = walk_html_for_runs(html, resolver)
 
     html_path, pasteable_path = render_site(projects, gdocs_css)
     json_path = generate_json(projects)

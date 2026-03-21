@@ -634,132 +634,79 @@ async def _deploy_full(
 ) -> dict[str, Any]:
     """Deploy full content to a blank Google Doc with styling.
 
-    Builds the complete document in one pass:
-    1. Preamble text
-    2. For each project: anchor (header) + body text
-    Then applies all styling with absolute indices.
+    Uses the pre-computed payloads (which now include preambles) with their
+    insertText + updateTextStyle requests. Resolves all relative offsets
+    (__OFFSET__+N) to absolute document indices.
     """
-    import re
-    from datetime import datetime
-
     client = GoogleDocsClient()
 
-    _ensure_seeded()
-    projects = _project_repo.get_all(include_archived=False)
+    # Build full text from all payloads in order, tracking absolute positions
+    full_text = ""
+    all_style_requests: list[dict[str, Any]] = []
 
-    # Build preamble text
-    preamble_text = ""
-    preambles = [p for p in projects if p.get("type") in ("preamble", "preamble-lists")]
-    preambles.sort(key=lambda p: 0 if p["type"] == "preamble" else 1)
-    for preamble in preambles:
-        content = preamble.get("sections", {}).get("content", {})
-        text = content.get("text", "").strip()
-        if text:
-            now = datetime.now()
-            text = re.sub(
-                r"To Do List\s+\w+ \d{1,2},?\s*\d{4}",
-                f"To Do List {now.strftime('%B')} {now.day}, {now.year}",
-                text,
-            )
-            preamble_text += text + "\n\n"
+    for payload in payloads:
+        anchor = payload.get("anchor_text", "")
 
-    # Build full document text and collect style requests with absolute indices
-    full_text = preamble_text
-    all_style_requests = []
+        # Insert anchor (header) line for projects
+        if anchor:
+            anchor_start = len(full_text)
+            full_text += anchor + "\n"
+            anchor_end = len(full_text) - 1
+            all_style_requests.append({
+                "updateTextStyle": {
+                    "range": {"startIndex": anchor_start + 1, "endIndex": anchor_end + 1},
+                    "textStyle": {"bold": True, "underline": True},
+                    "fields": "bold,underline",
+                }
+            })
 
-    # Map payload slugs for ordering
-    payload_map = {p["slug"]: p for p in payloads}
+        # Insert body text + resolve style offsets
+        for req in payload.get("requests", []):
+            if "insertText" in req:
+                body_text = req["insertText"]["text"]
+                insert_offset = len(full_text)
+                full_text += body_text
 
-    # Use project order from repo (matches the rendered order)
-    project_list = [p for p in projects if p.get("type") == "project"]
-    for project in project_list:
-        slug = project.get("slug", "")
-        payload = payload_map.get(slug)
-
-        # Always insert the header/anchor
-        header = project.get("header", {}).get("text", "")
-        if not header:
-            fields = project.get("fields", {})
-            owner = fields.get("owner_team", "")
-            header = f"({owner}) {fields.get('project_name', 'TBC')}, {fields.get('city', 'TBC')}"
-
-        anchor_start = len(full_text)
-        full_text += header + "\n"
-        anchor_end = len(full_text) - 1
-
-        # Bold + underline the header
-        all_style_requests.append(("bold", anchor_start, anchor_end))
-        all_style_requests.append(("underline", anchor_start, anchor_end))
-
-        if payload:
-            # Insert body text from the payload
-            for req in payload["requests"]:
-                if "insertText" in req:
-                    body_text = req["insertText"]["text"]
-                    insert_offset = len(full_text)
-                    full_text += body_text
-
-                    # Resolve style requests from payload
-                    for style_req in payload["requests"]:
-                        if "updateTextStyle" not in style_req:
-                            continue
-                        uts = style_req["updateTextStyle"]
-                        rng = uts["range"]
-                        # Parse __OFFSET__+N
-                        start_str = str(rng["startIndex"])
-                        end_str = str(rng["endIndex"])
-                        if "__OFFSET__+" in start_str:
-                            rel_start = int(start_str.split("+")[1])
-                            rel_end = int(end_str.split("+")[1])
-                            abs_start = insert_offset + rel_start
-                            abs_end = insert_offset + rel_end
-                            all_style_requests.append((
-                                uts["fields"],
-                                abs_start,
-                                abs_end,
-                                uts["textStyle"],
-                            ))
-                    break  # only one insertText per payload
+                # Resolve all style requests from this payload
+                for style_req in payload["requests"]:
+                    if "updateTextStyle" not in style_req:
+                        continue
+                    uts = style_req["updateTextStyle"]
+                    rng = uts["range"]
+                    start_str = str(rng["startIndex"])
+                    end_str = str(rng["endIndex"])
+                    if "__OFFSET__+" in start_str:
+                        rel_start = int(start_str.split("+")[1])
+                        rel_end = int(end_str.split("+")[1])
+                        abs_start = insert_offset + rel_start + 1  # +1 for doc index
+                        abs_end = insert_offset + rel_end + 1
+                        if abs_start < abs_end:
+                            all_style_requests.append({
+                                "updateTextStyle": {
+                                    "range": {"startIndex": abs_start, "endIndex": abs_end},
+                                    "textStyle": uts["textStyle"],
+                                    "fields": uts["fields"],
+                                }
+                            })
+                break  # only one insertText per payload
 
         full_text += "\n"
 
     if not full_text.strip():
         return {"error": "No content to deploy"}
 
-    # Build API requests
-    # 1. Insert all text at index 1
-    requests = [{"insertText": {"location": {"index": 1}, "text": full_text}}]
+    # Build request list: insert text first, then all styling
+    requests: list[dict[str, Any]] = [
+        {"insertText": {"location": {"index": 1}, "text": full_text}}
+    ]
+    requests.extend(all_style_requests)
 
-    # 2. Style requests with absolute indices (+1 for doc index offset)
-    for item in all_style_requests:
-        if len(item) == 3:
-            style_type, start, end = item
-            if style_type == "bold":
-                ts, fields = {"bold": True}, "bold"
-            elif style_type == "underline":
-                ts, fields = {"underline": True}, "underline"
-            else:
-                continue
-        elif len(item) == 4:
-            fields, start, end, ts = item
-        else:
-            continue
-
-        if start < end:
-            requests.append({
-                "updateTextStyle": {
-                    "range": {"startIndex": start + 1, "endIndex": end + 1},
-                    "textStyle": ts,
-                    "fields": fields,
-                }
-            })
-
-    logger.info("Full deploy: %d chars, %d style requests", len(full_text), len(requests) - 1)
+    logger.info("Full deploy: %d chars, %d style requests", len(full_text), len(all_style_requests))
 
     # Batch in chunks to avoid quota issues
     CHUNK = 500
     deployed = 0
-    errors = []
+    errors: list[str] = []
     for i in range(0, len(requests), CHUNK):
         chunk = requests[i:i + CHUNK]
         try:
@@ -778,10 +725,183 @@ async def _deploy_full(
                 errors.append(str(e)[:100])
 
     return {
-        "deployed": len([p for p in projects if p.get("type") == "project"]),
+        "deployed": len(payloads),
         "requests_sent": deployed,
         "errors": len(errors),
         "error_details": errors,
         "method": "full_insert_styled",
         "total_chars": len(full_text),
     }
+
+
+# ---------------------------------------------------------------------------
+# .docx round-trip: import → diff → apply → push to ClickUp
+# ---------------------------------------------------------------------------
+
+def import_from_docx(docx_path: str) -> dict[str, Any]:
+    """Parse a .docx file and diff against DB.
+
+    Returns deltas for UI review.  Does NOT modify the DB.
+    """
+    from .adapter import docx_to_projects, diff_projects
+
+    _ensure_seeded()
+
+    parsed = docx_to_projects(docx_path)
+    db_entries = _project_repo.get_all(include_archived=False)
+    deltas = diff_projects(parsed, db_entries)
+
+    return {
+        "parsed_count": len(parsed),
+        "db_count": len([e for e in db_entries if e.get("type") == "project"]),
+        "delta_count": len(deltas),
+        "deltas": [
+            {
+                "uid": d.uid,
+                "header": d.header_text[:80],
+                "category": d.category,
+                "name": d.name,
+                "old": d.old[:200],
+                "new": d.new[:200],
+            }
+            for d in deltas
+        ],
+    }
+
+
+def apply_docx_deltas(deltas: list[dict[str, Any]]) -> dict[str, Any]:
+    """Apply confirmed deltas from .docx import to the DB.
+
+    Each delta dict: {uid, category, name, new}
+    - category "field": update fields[name]
+    - category "section": update section text + regenerate HTML
+    """
+    from .pipeline.processor import _text_to_html
+
+    applied = 0
+    errors: list[str] = []
+
+    for delta in deltas:
+        uid = delta["uid"]
+        entry = _project_repo.get(uid)
+        if not entry:
+            errors.append(f"Entry {uid} not found")
+            continue
+
+        try:
+            if delta["category"] == "field":
+                fields = entry.get("fields", {})
+                fields[delta["name"]] = delta["new"]
+                entry["fields"] = fields
+                # Rebuild header from updated fields
+                header_text = entry.get("header", {}).get("text", "")
+                if delta["name"] in ("owner_team", "client", "project_name", "city",
+                                      "art_budget", "total_budget", "install_date"):
+                    from .clickup_sync import _build_header
+                    f = entry["fields"]
+                    entry["header"] = _build_header(
+                        f.get("owner_team", "BFA"), f.get("client", ""),
+                        f.get("project_name", ""), f.get("city", "TBC"),
+                        f.get("art_budget", "$TBC"), f.get("total_budget", "$TBC"),
+                        f.get("install_date", "TBC"),
+                    )
+
+            elif delta["category"] == "section":
+                sections = entry.get("sections", {})
+                sec = sections.get(delta["name"], {})
+                sec["text"] = delta["new"]
+                sec["html"] = "\n".join(
+                    f"<p>{_text_to_html(line)}</p>"
+                    for line in delta["new"].split("\n")
+                    if line.strip()
+                )
+                sections[delta["name"]] = sec
+                entry["sections"] = sections
+
+            _project_repo.upsert(entry)
+            applied += 1
+
+        except Exception as e:
+            errors.append(f"{uid}/{delta['name']}: {e}")
+            logger.warning("Delta apply error: %s", e)
+
+    return {"applied": applied, "errors": errors}
+
+
+async def push_changes_to_clickup(uids: list[str]) -> dict[str, Any]:
+    """Push BFA entry changes to ClickUp for provisioned projects.
+
+    For each uid, finds the matching ProjectRecord and updates the
+    ClickUp task with current BFA fields and sections.
+    """
+    from .adapter import project_to_clickup_updates
+    from .clickup_sync import _find_existing_entry
+    from autohelper.modules.clickup.client import ClickUpClient
+    from autohelper.modules.projects.store import get_project_store
+
+    store = get_project_store()
+    all_project_records = store.list_all()
+
+    updated = 0
+    errors: list[str] = []
+
+    for uid in uids:
+        entry = _project_repo.get(uid)
+        if not entry:
+            errors.append(f"BFA entry {uid} not found")
+            continue
+
+        # Find matching ProjectRecord (has clickup_list_id)
+        fields = entry.get("fields", {})
+        proj_name = fields.get("project_name", "")
+        client = fields.get("client", "")
+
+        record = None
+        for pr in all_project_records:
+            if (proj_name.lower() in pr.project_name.lower()
+                    or pr.project_name.lower() in proj_name.lower()):
+                record = pr
+                break
+            if client and client.lower() in (pr.developer_name or "").lower():
+                record = pr
+                break
+
+        if not record or not record.clickup_list_id:
+            errors.append(f"No ClickUp project for {client} - {proj_name}")
+            continue
+
+        try:
+            update = project_to_clickup_updates(entry, record)
+
+            cu = ClickUpClient()
+
+            # Get tasks in the list to find the root/summary task
+            tasks_resp = await cu._request("GET", f"/list/{record.clickup_list_id}/task",
+                                           params={"subtasks": "false", "page": "0"})
+            tasks = tasks_resp.get("tasks", [])
+
+            if not tasks:
+                errors.append(f"No tasks in ClickUp list for {proj_name}")
+                continue
+
+            # Update the first task (summary task) with description
+            task_id = tasks[0]["id"]
+            await cu._request("PUT", f"/task/{task_id}", json={
+                "name": update["task_name"],
+                "description": update["description"],
+            })
+
+            # Post comment if there are new notes
+            if update.get("comment"):
+                await cu._request("POST", f"/task/{task_id}/comment", json={
+                    "comment_text": update["comment"],
+                })
+
+            updated += 1
+            logger.info("Pushed to ClickUp: %s (task %s)", proj_name, task_id)
+
+        except Exception as e:
+            errors.append(f"{proj_name}: {e}")
+            logger.warning("ClickUp push error for %s: %s", proj_name, e)
+
+    return {"updated": updated, "errors": errors}

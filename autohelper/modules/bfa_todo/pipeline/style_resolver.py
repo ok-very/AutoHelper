@@ -40,8 +40,10 @@ _TAG_STYLES = {
 }
 
 BLOCK_TAGS = frozenset({
-    "p", "div", "li", "br", "h1", "h2", "h3", "h4", "h5", "h6", "tr",
+    "p", "div", "li", "br", "h1", "h2", "h3", "h4", "h5", "h6",
 })
+
+TABLE_TAGS = frozenset({"table", "thead", "tbody", "tr", "td", "th"})
 
 LIST_TAGS = frozenset({"ul", "ol"})
 
@@ -52,26 +54,24 @@ _STYLE_PRIORITY = [
 
 
 class StyleResolver:
-    """Resolve Google Docs CSS class names to semantic styles."""
+    """Resolve Google Docs CSS class names to semantic styles and rich properties."""
 
     def __init__(self, gdocs_css):
         self._class_map = {}  # {class_name: [semantic_styles]}
+        self._class_props = {}  # {class_name: {font_size_pt, bg_color, fg_color}}
         if gdocs_css:
             self._parse_css(gdocs_css)
 
     def _parse_css(self, css):
-        """Parse CSS text and build the class→styles map."""
-        # Remove comments
+        """Parse CSS text and build the class→styles map + rich properties."""
         css = re.sub(r"/\*.*?\*/", "", css, flags=re.DOTALL)
 
-        # Extract rule blocks: .classname { declarations }
         for m in re.finditer(r"\.([\w-]+)\s*\{([^}]*)\}", css):
             cls_name = m.group(1)
             declarations = m.group(2)
 
             styles = set()
             for prop, val_re, sem_name in _PROPERTY_RULES:
-                # Find property:value pairs
                 prop_match = re.search(
                     rf"{re.escape(prop)}\s*:\s*([^;]+)", declarations
                 )
@@ -82,6 +82,23 @@ class StyleResolver:
 
             if styles:
                 self._class_map[cls_name] = sorted(styles)
+
+            # Extract rich properties (font-size, colors)
+            props = {}
+            size_match = re.search(r"font-size:\s*([\d.]+)pt", declarations)
+            if size_match:
+                props["font_size_pt"] = float(size_match.group(1))
+
+            bg_match = re.search(r"background-color:\s*(#[0-9a-fA-F]{6})", declarations)
+            if bg_match and bg_match.group(1).lower() != "#ffffff":
+                props["bg_color"] = bg_match.group(1).lower()
+
+            fg_match = re.search(r"(?<!background-)color:\s*(#[0-9a-fA-F]{6})", declarations)
+            if fg_match and fg_match.group(1).lower() != "#000000":
+                props["fg_color"] = fg_match.group(1).lower()
+
+            if props:
+                self._class_props[cls_name] = props
 
     def resolve(self, class_str):
         """Return list of semantic styles for a space-separated class string."""
@@ -95,6 +112,16 @@ class StyleResolver:
                     styles.append(s)
                     seen.add(s)
         return styles
+
+    def resolve_rich(self, class_str):
+        """Return rich style properties (font_size_pt, bg_color, fg_color) for a class string."""
+        if not class_str:
+            return {}
+        merged = {}
+        for cls in class_str.split():
+            props = self._class_props.get(cls, {})
+            merged.update(props)
+        return merged
 
     def get_primary_style(self, styles):
         """Return the single highest-priority style for GDocs API."""
@@ -140,20 +167,32 @@ def walk_html_for_runs(html_str, resolver):
 
     runs = []
 
-    def _walk(node, inherited_styles=None, inherited_href=None, list_depth=0):
+    def _walk(node, inherited_styles=None, inherited_href=None, list_depth=0, inherited_rich=None):
         styles = list(inherited_styles or [])
+        rich = dict(inherited_rich or {})
         href = inherited_href
 
         # Track list nesting depth
         if node.tag == "li":
             list_depth = max(list_depth, 1)
 
-        # Detect styles from CSS classes
+        # Detect styles + rich properties from CSS classes
         if node.tag == "span":
             class_str = node.get("class", "")
             for s in resolver.resolve(class_str):
                 if s not in styles:
                     styles.append(s)
+            # Rich properties (font-size, colors)
+            rp = resolver.resolve_rich(class_str)
+            if rp:
+                rich.update(rp)
+
+        # Also check <p> tags for class-based sizing
+        if node.tag == "p":
+            class_str = node.get("class", "")
+            rp = resolver.resolve_rich(class_str)
+            if rp:
+                rich.update(rp)
 
         # Detect styles from HTML tags
         tag_style = _TAG_STYLES.get(node.tag)
@@ -164,24 +203,49 @@ def walk_html_for_runs(html_str, resolver):
         if node.tag == "a":
             href = node.get("href")
 
+        # Handle tables as structured data instead of flattening
+        if node.tag == "table":
+            table_data = []
+            for tr in node.findall(".//tr"):
+                row = []
+                for td in tr.findall("./td") or tr.findall("./th"):
+                    cell_text = td.text_content().strip()
+                    cell_classes = td.get("class", "")
+                    cell_rich = resolver.resolve_rich(cell_classes) if cell_classes else {}
+                    cell_styles = resolver.resolve(cell_classes) if cell_classes else []
+                    row.append({"text": cell_text, "styles": cell_styles, "rich": cell_rich})
+                if row:
+                    table_data.append(row)
+            if table_data:
+                runs.append({
+                    "text": "",
+                    "styles": [],
+                    "href": None,
+                    "list_level": 0,
+                    "rich": {},
+                    "table": table_data,
+                })
+            return  # don't walk into table children
+
         if node.text:
             runs.append({
                 "text": _collapse_ws(node.text),
                 "styles": list(styles),
                 "href": href,
                 "list_level": list_depth,
+                "rich": dict(rich) if rich else {},
             })
 
         for child in node:
-            _walk(child, styles, href, list_depth)
+            _walk(child, styles, href, list_depth, rich)
             if child.tail:
-                # Tail text after a child reverts to parent context
                 tail_depth = list_depth if node.tag == "li" else (list_depth if list_depth else 0)
                 runs.append({
                     "text": _collapse_ws(child.tail),
                     "styles": list(inherited_styles or []),
                     "href": inherited_href,
                     "list_level": tail_depth,
+                    "rich": dict(inherited_rich or {}),
                 })
 
         # Insert newline after block elements

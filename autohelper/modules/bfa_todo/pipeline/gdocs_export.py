@@ -45,12 +45,13 @@ def _build_project_payload(project):
         for run in runs:
             text = run.get("text", "")
             styles = run.get("styles", [])
+            rich = run.get("rich", {})
             primary = resolver.get_primary_style(styles)
-            all_runs.append((text, primary))
+            all_runs.append((text, primary, styles, rich))
 
         # ensure newline after each section
         if all_runs and not all_runs[-1][0].endswith("\n"):
-            all_runs.append(("\n", None))
+            all_runs.append(("\n", None, [], {}))
 
     if not all_runs:
         return None
@@ -58,13 +59,26 @@ def _build_project_payload(project):
     # -- First pass: collapse runs into raw flat text + style ranges --
     raw_text = ""
     raw_ranges = []  # (start, end, style_type)
+    raw_rich_ranges = []  # (start, end, rich_props_dict)
 
-    for text, style in all_runs:
+    for item in all_runs:
+        text = item[0]
+        style = item[1]
+        all_styles = item[2] if len(item) > 2 else []
+        rich = item[3] if len(item) > 3 else {}
         start = len(raw_text)
         raw_text += text
         end = len(raw_text)
-        if style and start < end:
-            raw_ranges.append((start, end, style))
+        if start < end:
+            # Emit all semantic styles (not just primary)
+            for s in all_styles:
+                raw_ranges.append((start, end, s))
+            # If only primary was found and no all_styles
+            if not all_styles and style:
+                raw_ranges.append((start, end, style))
+            # Rich properties (font-size, colors)
+            if rich:
+                raw_rich_ranges.append((start, end, rich))
 
     if not raw_text.strip():
         return None
@@ -72,7 +86,8 @@ def _build_project_payload(project):
     # -- Second pass: clean up line-by-line, rebuild with adjusted offsets --
     flat_text = ""
     style_ranges = []
-    src_pos = 0  # position in raw_text
+    rich_style_ranges = []  # (start, end, rich_props)
+    src_pos = 0
 
     for line in raw_text.split("\n"):
         stripped = line.strip()
@@ -101,10 +116,26 @@ def _build_project_payload(project):
             if s < e:
                 local_s = s - content_start
                 local_e = e - content_start
-                ds = dest_start + omap[local_s]
-                de = dest_start + omap[local_e]
-                if ds < de:
-                    style_ranges.append((ds, de, stype))
+                if local_s < len(omap) and local_e < len(omap):
+                    ds = dest_start + omap[local_s]
+                    de = dest_start + omap[local_e]
+                    if ds < de:
+                        style_ranges.append((ds, de, stype))
+
+        for rs, re_, rich in raw_rich_ranges:
+            s = max(rs, content_start)
+            e = min(re_, content_end)
+            if s < e:
+                local_s = s - content_start
+                local_e = e - content_end
+                if local_s < len(omap) and local_e + len(stripped) < len(omap):
+                    local_e = e - content_start
+                    if local_e > len(omap) - 1:
+                        local_e = len(omap) - 1
+                    ds = dest_start + omap[local_s]
+                    de = dest_start + omap[min(local_e, len(omap) - 1)]
+                    if ds < de:
+                        rich_style_ranges.append((ds, de, rich))
 
         flat_text += final + "\n"
         src_pos += len(line) + 1
@@ -184,6 +215,61 @@ def _build_project_payload(project):
             }
         })
 
+    # Rich style requests (font-size, background-color, foreground-color)
+    def _hex_to_rgb(hex_color):
+        h = hex_color.lstrip("#")
+        return {
+            "red": int(h[0:2], 16) / 255,
+            "green": int(h[2:4], 16) / 255,
+            "blue": int(h[4:6], 16) / 255,
+        }
+
+    for start, end, rich in rich_style_ranges:
+        if not flat_text[start:end].strip():
+            continue
+
+        if "font_size_pt" in rich and rich["font_size_pt"] != 11:
+            requests.append({
+                "updateTextStyle": {
+                    "range": {
+                        "startIndex": f"__OFFSET__+{start}",
+                        "endIndex": f"__OFFSET__+{end}",
+                    },
+                    "textStyle": {
+                        "fontSize": {"magnitude": rich["font_size_pt"], "unit": "PT"}
+                    },
+                    "fields": "fontSize",
+                }
+            })
+
+        if "bg_color" in rich:
+            requests.append({
+                "updateTextStyle": {
+                    "range": {
+                        "startIndex": f"__OFFSET__+{start}",
+                        "endIndex": f"__OFFSET__+{end}",
+                    },
+                    "textStyle": {
+                        "backgroundColor": {"color": {"rgbColor": _hex_to_rgb(rich["bg_color"])}}
+                    },
+                    "fields": "backgroundColor",
+                }
+            })
+
+        if "fg_color" in rich:
+            requests.append({
+                "updateTextStyle": {
+                    "range": {
+                        "startIndex": f"__OFFSET__+{start}",
+                        "endIndex": f"__OFFSET__+{end}",
+                    },
+                    "textStyle": {
+                        "foregroundColor": {"color": {"rgbColor": _hex_to_rgb(rich["fg_color"])}}
+                    },
+                    "fields": "foregroundColor",
+                }
+            })
+
     # Sort updateTextStyle requests in reverse offset order to avoid drift
     insert_req = requests[0]
     style_reqs = requests[1:]
@@ -208,10 +294,22 @@ def generate_gdocs_json(processed_projects):
     """
     payloads = []
 
-    for p in processed_projects:
-        if p["type"] in ("preamble", "preamble-lists"):
-            continue
+    # Order: preambles → active projects → on-hold projects
+    def _sort_key(p):
+        ptype = p.get("type", "")
+        if ptype == "preamble":
+            return (0, "")
+        if ptype == "preamble-lists":
+            return (1, "")
+        status = p.get("status", "active")
+        name = p.get("fields", {}).get("project_name", "")
+        if status == "on_hold":
+            return (3, name)
+        return (2, name)
 
+    ordered = sorted(processed_projects, key=_sort_key)
+
+    for p in ordered:
         payload = _build_project_payload(p)
         if payload:
             payloads.append(payload)
