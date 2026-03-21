@@ -55,19 +55,13 @@ try {
         $connectParams.CertificateThumbprint = $auth.cert_thumbprint
         $connectParams.Organization = $auth.organization
     }
-    elseif ($auth.email -and $auth.password) {
-        # Credential-based auth (email + password)
-        $secPass = ConvertTo-SecureString $auth.password -AsPlainText -Force
-        $cred = New-Object System.Management.Automation.PSCredential($auth.email, $secPass)
-        $connectParams.Credential = $cred
-        $connectParams.UserPrincipalName = $auth.email
-    }
     elseif ($auth.email) {
-        # UPN-only
+        # Device code flow — works from subprocesses, no WAM/window handle needed
         $connectParams.UserPrincipalName = $auth.email
+        $connectParams.Device = $true
     }
     else {
-        $result.errors += "No credentials configured. Add email and password in Settings > Exchange Connection."
+        $result.errors += "No credentials configured. Add email in Settings > Exchange Connection."
         $result | ConvertTo-Json -Compress
         exit 1
     }

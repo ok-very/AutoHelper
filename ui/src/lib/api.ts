@@ -178,7 +178,11 @@ export const api = {
   contacts: {
     status: () => fetchJson<Record<string, unknown>>('/contacts/status'),
     history: () => fetchJson<Record<string, unknown>[]>('/contacts/history'),
+    exchangeStatus: () => fetchJson<{ state: string; error?: string }>('/contacts/exchange/status'),
+    connectExchange: () => post('/contacts/exchange/connect').then(r => r.json()),
     testExchange: () => post('/contacts/exchange/test').then(r => r.json()),
+    disconnectExchange: () => post('/contacts/exchange/disconnect').then(r => r.json()),
+    exchangePrereqs: () => fetchJson<Record<string, unknown>>('/contacts/exchange/prerequisites'),
     sync: () => post('/contacts/sync').then(r => r.json()),
     // Hub endpoints
     hub: {

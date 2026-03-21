@@ -13,6 +13,39 @@ from autohelper.db import get_db
 from .csv_reader import file_hash, read_contacts_csv
 from .types import ContactRecord, SyncResult
 
+import ftfy
+
+
+def _read_hub_contacts() -> list[ContactRecord]:
+    """Read contacts from the hub DB table, with ftfy cleanup."""
+    db = get_db()
+    rows = db.execute(
+        """SELECT email_primary, full_name, first_name, last_name, company,
+                  job_title, phone_business, phone_mobile, street_address,
+                  city, state, postal_code, country, category
+           FROM contacts WHERE email_primary IS NOT NULL AND email_primary != ''"""
+    ).fetchall()
+    contacts: list[ContactRecord] = []
+    for r in rows:
+        contacts.append(ContactRecord(
+            email_primary=r[0].lower(),
+            full_name=ftfy.fix_text(r[1] or ""),
+            first_name=ftfy.fix_text(r[2] or ""),
+            last_name=ftfy.fix_text(r[3] or ""),
+            company=ftfy.fix_text(r[4] or ""),
+            job_title=ftfy.fix_text(r[5] or ""),
+            phone_business=r[6] or "",
+            phone_mobile=r[7] or "",
+            street_address=ftfy.fix_text(r[8] or ""),
+            city=ftfy.fix_text(r[9] or ""),
+            state=ftfy.fix_text(r[10] or ""),
+            postal_code=r[11] or "",
+            country=ftfy.fix_text(r[12] or ""),
+            category_canonical=r[13] or "",
+        ))
+    logger.info("Read %d contacts from hub", len(contacts))
+    return contacts
+
 logger = logging.getLogger(__name__)
 
 
@@ -176,9 +209,10 @@ class ContactSyncService:
         managed_prefix: str,
     ) -> None:
         """
-        Apply changes to the tracking database and invoke Exchange sync.
+        Apply changes to the tracking database and push to Exchange.
 
-        For now, updates the tracking DB. Exchange push is in Phase 2.
+        Updates tracking DB per-contact, then batches the Exchange push
+        via PowerShell subprocess at the end.
         """
         db = get_db()
         settings = get_settings()
@@ -202,6 +236,11 @@ class ContactSyncService:
 
         dry_run = settings.contact_sync_dry_run
 
+        # Collect batches for Exchange push
+        exchange_creates: list[ContactRecord] = []
+        exchange_updates: list[ContactRecord] = []
+        exchange_delete_ids: list[str] = []
+
         # Process upserts
         for contact in to_upsert:
             existing = db.execute(
@@ -216,18 +255,14 @@ class ContactSyncService:
                     result.created += 1
                 continue
 
-            # Try Exchange sync (Phase 2 will add actual PowerShell call)
             exchange_identity = f"{managed_prefix}{contact.email_primary}"
-            try:
-                self._sync_to_exchange(contact, exchange_identity, is_update=bool(existing))
-            except Exception as e:
-                result.errors.append(f"{contact.email_primary}: {e}")
-                continue
 
             if existing:
                 result.updated += 1
+                exchange_updates.append(contact)
             else:
                 result.created += 1
+                exchange_creates.append(contact)
 
             # Update tracking DB
             db.execute(
@@ -252,11 +287,7 @@ class ContactSyncService:
             ).fetchone()
 
             if stored_row:
-                try:
-                    self._delete_from_exchange(stored_row[0])
-                except Exception as e:
-                    result.errors.append(f"delete {email}: {e}")
-                    continue
+                exchange_delete_ids.append(stored_row[0])
 
             result.deleted += 1
             db.execute(
@@ -269,30 +300,48 @@ class ContactSyncService:
         if dry_run:
             result.status = "dry_run"
         else:
+            # Batch Exchange push via PowerShell
+            if exchange_creates or exchange_updates or exchange_delete_ids:
+                ex_result = self._push_to_exchange(
+                    exchange_creates, exchange_updates, exchange_delete_ids, managed_prefix,
+                )
+                if ex_result.get("errors"):
+                    result.errors.extend(ex_result["errors"])
+                logger.info(
+                    "Exchange push: %d created, %d updated, %d deleted",
+                    ex_result.get("created", 0),
+                    ex_result.get("updated", 0),
+                    ex_result.get("deleted", 0),
+                )
             result.status = "completed"
 
-    def _sync_to_exchange(
-        self, contact: ContactRecord, exchange_identity: str, is_update: bool
-    ) -> None:
+    def _push_to_exchange(
+        self,
+        to_create: list[ContactRecord],
+        to_update: list[ContactRecord],
+        to_delete: list[str],
+        managed_prefix: str,
+    ) -> dict:
         """
-        Push a contact to Exchange Online.
+        Batch push contacts to Exchange Online via PowerShell.
 
-        Stub for Phase 1 - Phase 2 adds PowerShell subprocess.
+        Calls sync_contacts_to_exchange() which writes JSON, invokes
+        PowerShell, and parses results. Graceful on auth/connection failure.
         """
-        logger.debug(
-            "%s contact %s (%s)",
-            "Updating" if is_update else "Creating",
-            contact.email_primary,
-            exchange_identity,
-        )
+        from .exchange_sync import sync_contacts_to_exchange
 
-    def _delete_from_exchange(self, exchange_identity: str) -> None:
-        """
-        Delete a contact from Exchange Online.
-
-        Stub for Phase 1 - Phase 2 adds PowerShell subprocess.
-        """
-        logger.debug("Deleting contact %s", exchange_identity)
+        try:
+            return sync_contacts_to_exchange(
+                to_create, to_update, to_delete, managed_prefix,
+            )
+        except Exception as e:
+            logger.warning("Exchange push failed (will retry next cycle): %s", e)
+            return {
+                "created": 0,
+                "updated": 0,
+                "deleted": 0,
+                "errors": [f"Exchange push failed: {e}"],
+            }
 
     def run_sync(self, force: bool = False) -> SyncResult:
         """
@@ -324,31 +373,29 @@ class ContactSyncService:
                 result.errors.append("Contact sync is disabled")
                 return result
 
-            csv_path = Path(settings.contact_sync_csv_path)
-            if not csv_path.is_file():
-                result.status = "failed"
-                result.errors.append(f"CSV file not found: {csv_path}")
-                return result
-
             # Work hours guard
             if not force and not self._is_work_hours():
                 result.status = "skipped"
                 result.errors.append("Outside work hours")
                 return result
 
-            # File hash change detection
-            current_hash = file_hash(csv_path)
-            result.file_hash = current_hash
+            # Read contacts — from CSV if configured, otherwise from hub DB
+            csv_path_str = settings.contact_sync_csv_path
+            if csv_path_str and Path(csv_path_str).is_file():
+                csv_path = Path(csv_path_str)
+                current_hash = file_hash(csv_path)
+                result.file_hash = current_hash
+                if not force:
+                    stored_hash = self._get_stored_file_hash()
+                    if stored_hash == current_hash:
+                        result.status = "skipped"
+                        result.errors.append("File unchanged")
+                        return result
+                contacts = read_contacts_csv(csv_path)
+            else:
+                contacts = _read_hub_contacts()
+                current_hash = ""
 
-            if not force:
-                stored_hash = self._get_stored_file_hash()
-                if stored_hash == current_hash:
-                    result.status = "skipped"
-                    result.errors.append("File unchanged")
-                    return result
-
-            # Read CSV
-            contacts = read_contacts_csv(csv_path)
             result.csv_row_count = len(contacts)
             result.dry_run = settings.contact_sync_dry_run
 

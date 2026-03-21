@@ -1,5 +1,6 @@
 """Contact module routes — sync endpoints + hub CRUD + association management."""
 
+import asyncio
 import json
 from dataclasses import asdict
 
@@ -15,7 +16,7 @@ from .schemas import (
     ContactStatusResponse,
     ContactSyncTriggerResponse,
 )
-from .exchange_sync import test_exchange_connection
+from .exchange_sync import test_exchange_connection, disconnect_exchange
 from .service import ContactSyncService
 from . import hub
 
@@ -74,10 +75,37 @@ async def trigger_sync(background_tasks: BackgroundTasks) -> ContactSyncTriggerR
     )
 
 
+@router.get("/exchange/status")
+async def exchange_status() -> dict:
+    """Return current Exchange session state (disconnected|connecting|connected)."""
+    from .exchange_sync import get_session_state
+    return get_session_state()
+
+
+@router.get("/exchange/prerequisites")
+async def exchange_prerequisites() -> dict:
+    """Check if Exchange sync prerequisites are met (pwsh + module)."""
+    from .exchange_sync import check_exchange_prerequisites
+    return await asyncio.to_thread(check_exchange_prerequisites)
+
+
+@router.post("/exchange/connect")
+async def connect_exchange() -> dict:
+    """Launch interactive Exchange login window for MFA authentication."""
+    from .exchange_sync import connect_exchange_interactive
+    return await asyncio.to_thread(connect_exchange_interactive)
+
+
 @router.post("/exchange/test")
 async def test_exchange() -> dict:
-    """Test Exchange Online connectivity via interactive OAuth."""
-    return test_exchange_connection()
+    """Test Exchange Online connectivity (non-interactive)."""
+    return await asyncio.to_thread(test_exchange_connection)
+
+
+@router.post("/exchange/disconnect")
+async def disconnect_exchange_endpoint() -> dict:
+    """Disconnect active Exchange Online session."""
+    return await asyncio.to_thread(disconnect_exchange)
 
 
 @router.get("/history", response_model=ContactHistoryResponse)

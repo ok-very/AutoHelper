@@ -2,6 +2,7 @@
 export { Badge } from './Badge';
 export { Button } from './Button';
 export { Card } from './Card';
+export { CopyButton } from './CopyButton';
 export { Checkbox } from './Checkbox';
 export { FilterChip } from './FilterChip';
 export { Inline } from './Inline';

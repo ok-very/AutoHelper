@@ -1,5 +1,5 @@
-import { useState, useEffect } from 'react'
-import { Server, RefreshCw, Clock, List } from 'lucide-react'
+import { useState, useEffect, useRef, useCallback } from 'react'
+import { Server, RefreshCw, Clock, List, Terminal } from 'lucide-react'
 import { ModuleLayout } from '@/components/ModuleLayout'
 import { CardShell } from '@/components/settings/CardShell'
 import { StatusBadge } from '@/components/settings/StatusBadge'
@@ -7,8 +7,8 @@ import { FieldRow } from '@/components/settings/FieldRow'
 import { ConnectedValue } from '@/components/settings/ConnectedValue'
 import { FeedbackMessage } from '@/components/FeedbackMessage'
 import { WiringManifest } from '@/components/integrations'
+import { CopyButton } from '@/ui/atoms'
 import { api } from '@/lib/api'
-import type { IntegrationStatus } from '@/lib/api'
 
 export function ContactsSettingsPage() {
   return (
@@ -19,6 +19,7 @@ export function ContactsSettingsPage() {
       <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
         <WiringManifest module="contacts" />
         <ExchangeConnectionCard />
+        <ConsoleCard />
         <ContactSyncCard />
         <SyncStatusCard />
         <SyncHistoryCard />
@@ -31,133 +32,145 @@ export function ContactsSettingsPage() {
 // Exchange Connection
 // ---------------------------------------------------------------------------
 
-function EnvBadge() {
-  return (
-    <span className="conn-badge ok" style={{ fontSize: '10px', padding: '1px 5px', letterSpacing: '0.05em' }}>
-      ENV
-    </span>
-  )
-}
+type ExchangePhase = 'no-creds' | 'ready' | 'connecting' | 'connected' | 'error'
 
 function ExchangeConnectionCard() {
-  const [email, setEmail] = useState('')
-  const [hasPassword, setHasPassword] = useState(false)
-  const [source, setSource] = useState<'env' | 'config' | 'none'>('none')
-  const [feedback, setFeedback] = useState('')
-  const [feedbackErr, setFeedbackErr] = useState(false)
-  const [testing, setTesting] = useState(false)
+  const [phase, setPhase] = useState<ExchangePhase>('no-creds')
+  const [orgName, setOrgName] = useState('')
+  const [deviceCode, setDeviceCode] = useState('')
+  const [error, setError] = useState('')
   const [loaded, setLoaded] = useState(false)
+  const busy = useRef(false)
 
+  // ── Mount: check credentials + session state ─────────────────
   useEffect(() => {
-    Promise.all([
-      api.integrations.status().catch(() => null),
-      api.config.get().catch(() => ({})),
-    ]).then(([intStatus, cfg]) => {
-      const ex = intStatus?.exchange
-      if (ex) {
-        setEmail(ex.email.value)
-        setSource(ex.source)
-        setHasPassword(ex.configured && ex.source !== 'none')
-      } else {
-        // Fallback to config if integrations endpoint unavailable
-        setEmail(((cfg as Record<string, unknown>).exchange_email as string) ?? '')
-        setHasPassword(Boolean((cfg as Record<string, unknown>).exchange_password))
-      }
+    api.integrations.status().catch(() => null).then(async (intStatus) => {
+      const hasCreds = intStatus?.exchange?.configured
       setLoaded(true)
+      if (!hasCreds) { setPhase('no-creds'); return }
+      try {
+        const st = await api.contacts.exchangeStatus()
+        if (st.state === 'connected') {
+          const test = await api.contacts.testExchange()
+          setOrgName(test.message ?? '')
+          setPhase('connected')
+        } else {
+          setPhase('ready')
+        }
+      } catch {
+        setPhase('ready')
+      }
     })
   }, [])
 
-  const isConfigured = email.length > 0
-  const isEnv = source === 'env'
+  // ── Poll during connecting phase ─────────────────────────────
+  useEffect(() => {
+    if (phase !== 'connecting') return
+    const start = Date.now()
+    const iv = setInterval(async () => {
+      try {
+        const st = await api.contacts.exchangeStatus()
+        if (st.state === 'connected') {
+          const test = await api.contacts.testExchange()
+          setOrgName(test.message ?? '')
+          setPhase('connected')
+        } else if (st.state === 'disconnected' && st.error) {
+          setError(st.error)
+          setPhase('error')
+        } else if (Date.now() - start > 120_000) {
+          setError('MFA timed out')
+          setPhase('error')
+        }
+      } catch { /* keep polling */ }
+    }, 3000)
+    return () => clearInterval(iv)
+  }, [phase])
 
-  const testConnection = async () => {
-    setTesting(true)
-    setFeedback('')
+  // ── Actions ──────────────────────────────────────────────────
+  const connect = async () => {
+    if (busy.current) return
+    busy.current = true
     try {
-      const data = await api.contacts.testExchange()
-      if (data.ok) {
-        setFeedback('\u2713 Exchange connection successful')
-        setFeedbackErr(false)
+      const data = await api.contacts.connectExchange()
+      if (data.connected) {
+        setOrgName(data.message ?? '')
+        setPhase('connected')
+      } else if (data.device_code) {
+        window.open(data.url, '_blank')
+        setDeviceCode(data.code)
+        setPhase('connecting')
       } else {
-        setFeedback(`\u2717 ${data.error ?? 'Connection failed'}`)
-        setFeedbackErr(true)
+        setError(data.message ?? 'Connect failed')
+        setPhase('error')
       }
     } catch {
-      setFeedback('\u2717 Network error')
-      setFeedbackErr(true)
+      setError('Network error')
+      setPhase('error')
     }
-    setTesting(false)
+    busy.current = false
   }
 
-  const clear = async () => {
-    try {
-      const r = await api.config.save({ exchange_email: '', exchange_password: '' })
-      if (r.ok) {
-        setEmail('')
-        setHasPassword(false)
-        setSource('none')
-        setFeedback('\u2713 Cleared')
-        setFeedbackErr(false)
-      }
-    } catch {
-      setFeedback('\u2717 Error')
-      setFeedbackErr(true)
-    }
+  const disconnect = async () => {
+    try { await api.contacts.disconnectExchange() } catch { /* ok */ }
+    setOrgName('')
+    setDeviceCode('')
+    setPhase('ready')
   }
 
   if (!loaded) return null
 
-  return (
-    <CardShell
-      icon={<Server size={20} />}
-      iconBg="icon-blue"
-      title="Exchange Connection"
-      badge={<StatusBadge ok={isConfigured} label={isConfigured ? 'Configured' : 'Not configured'} />}
-    >
-      <FieldRow label="Email">
-        {isEnv ? (
-          <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
-            <span className="configured-value">{email}</span>
-            <EnvBadge />
-          </div>
-        ) : (
-          <ConnectedValue
-            value={email}
-            placeholder="user@example.com"
-            onSave={async (v) => {
-              const r = await api.config.save({ exchange_email: v })
-              if (r.ok) { setEmail(v); setSource('config'); setFeedback('\u2713 Saved'); setFeedbackErr(false) }
-            }}
-            onClear={clear}
-          />
-        )}
-      </FieldRow>
+  const badge = (() => {
+    switch (phase) {
+      case 'connected': return <StatusBadge ok label="Connected" />
+      case 'connecting': return <span className="conn-badge off">Connecting</span>
+      case 'error': return <span className="conn-badge off">Error</span>
+      default: return null
+    }
+  })()
 
-      {!isEnv && (
-        <FieldRow label="Password">
-          <ConnectedValue
-            value={hasPassword ? 'set' : ''}
-            password
-            placeholder="Exchange password"
-            onSave={async (v) => {
-              const r = await api.config.save({ exchange_password: v })
-              if (r.ok) { setHasPassword(true); setFeedback('\u2713 Saved'); setFeedbackErr(false) }
-            }}
-            onClear={async () => {
-              const r = await api.config.save({ exchange_password: '' })
-              if (r.ok) { setHasPassword(false); setFeedback('\u2713 Cleared'); setFeedbackErr(false) }
-            }}
-          />
+  return (
+    <CardShell icon={<Server size={20} />} iconBg="icon-blue" title="Exchange Connection" badge={badge}>
+      {phase === 'no-creds' && (
+        <span className="not-configured">No credentials configured. Set exchange_email in Settings or .env</span>
+      )}
+
+      {phase === 'connecting' && (
+        <div style={{
+          display: 'flex', alignItems: 'center', gap: '12px',
+          padding: '10px 12px', borderRadius: '6px',
+          background: 'var(--ws-bg-elevated, #f5f5f5)',
+          border: '1px solid var(--ws-border, #e0e0e0)',
+        }}>
+          <span style={{ fontSize: '12px', opacity: 0.7 }}>Enter code in browser:</span>
+          <code style={{ fontSize: '18px', fontWeight: 700, letterSpacing: '0.1em' }}>{deviceCode}</code>
+          <CopyButton value={deviceCode} />
+        </div>
+      )}
+
+      {phase === 'connected' && orgName && (
+        <FieldRow label="Organization">
+          <span className="configured-value">{orgName.replace(/^Connected to /, '')}</span>
         </FieldRow>
       )}
 
+      {phase === 'error' && (
+        <FeedbackMessage message={error} isError />
+      )}
+
       <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
-        {isConfigured && (
-          <button className="btn btn-sm" onClick={testConnection} disabled={testing}>
-            {testing ? 'Testing\u2026' : 'Test Connection'}
-          </button>
+        {(phase === 'ready' || phase === 'error') && (
+          <button className="btn btn-sm" onClick={connect}>Connect</button>
         )}
-        <FeedbackMessage message={feedback} isError={feedbackErr} />
+        {phase === 'connected' && (
+          <>
+            <button className="btn btn-sm" onClick={async () => {
+              const data = await api.contacts.testExchange()
+              setOrgName(data.message ?? '')
+              if (!data.connected) { setPhase('ready') }
+            }}>Test</button>
+            <button className="btn btn-sm" style={{ color: 'var(--color-error)' }} onClick={disconnect}>Disconnect</button>
+          </>
+        )}
       </div>
     </CardShell>
   )
@@ -319,6 +332,7 @@ function ContactSyncCard() {
 function SyncStatusCard() {
   const [status, setStatus] = useState<Record<string, unknown> | null>(null)
   const [syncing, setSyncing] = useState(false)
+  const [dryRun, setDryRun] = useState(false)
   const [feedback, setFeedback] = useState('')
   const [feedbackErr, setFeedbackErr] = useState(false)
 
@@ -334,13 +348,14 @@ function SyncStatusCard() {
     setSyncing(true)
     setFeedback('')
     try {
+      await api.config.save({ contact_sync_dry_run: dryRun })
       const data = await api.contacts.sync()
-      if (data.ok) {
-        setFeedback('\u2713 Sync complete')
+      if (data.status === 'started') {
+        setFeedback(`\u2713 ${data.message}${dryRun ? ' (dry run)' : ''}`)
         setFeedbackErr(false)
         load()
       } else {
-        setFeedback(`\u2717 ${data.error ?? 'Sync failed'}`)
+        setFeedback(`\u2717 ${data.message ?? 'Sync failed'}`)
         setFeedbackErr(true)
       }
     } catch {
@@ -375,6 +390,10 @@ function SyncStatusCard() {
         <button className="btn btn-sm btn-primary" onClick={syncNow} disabled={syncing}>
           {syncing ? 'Syncing\u2026' : 'Sync Now'}
         </button>
+        <label style={{ display: 'flex', alignItems: 'center', gap: '4px', fontSize: '12px', cursor: 'pointer' }}>
+          <input type="checkbox" checked={dryRun} onChange={e => setDryRun(e.target.checked)} />
+          Dry run
+        </label>
         <FeedbackMessage message={feedback} isError={feedbackErr} />
       </div>
     </CardShell>
@@ -424,6 +443,52 @@ function SyncHistoryCard() {
           </table>
         </div>
       )}
+    </CardShell>
+  )
+}
+
+// ---------------------------------------------------------------------------
+// Console (live logs via SSE)
+// ---------------------------------------------------------------------------
+
+function ConsoleCard() {
+  const [lines, setLines] = useState<string[]>([])
+  const logRef = useRef<HTMLDivElement>(null)
+  const autoScroll = useRef(true)
+
+  useEffect(() => {
+    fetch('/logs?limit=100')
+      .then(r => r.ok ? r.json() : [])
+      .then((data: string[]) => { if (Array.isArray(data)) setLines(data) })
+      .catch(() => {})
+
+    const es = new EventSource('/logs/stream')
+    es.onmessage = (e) => {
+      setLines(prev => {
+        const next = [...prev, e.data]
+        return next.length > 500 ? next.slice(-500) : next
+      })
+    }
+    return () => es.close()
+  }, [])
+
+  useEffect(() => {
+    if (autoScroll.current && logRef.current) {
+      logRef.current.scrollTop = logRef.current.scrollHeight
+    }
+  }, [lines])
+
+  const onScroll = useCallback(() => {
+    if (!logRef.current) return
+    const { scrollTop, scrollHeight, clientHeight } = logRef.current
+    autoScroll.current = scrollHeight - scrollTop - clientHeight < 40
+  }, [])
+
+  return (
+    <CardShell icon={<Terminal size={18} />} iconBg="icon-blue" title="Console">
+      <div ref={logRef} className="console-log" onScroll={onScroll}>
+        {lines.map((line, i) => <div key={i}>{line}</div>)}
+      </div>
     </CardShell>
   )
 }

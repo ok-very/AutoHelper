@@ -10,6 +10,7 @@ _.file = [".env", ".env.agent"]
 
 [tasks.dev]
 description = "Start AutoHelper dev server"
+depends = ["ui:build"]
 run = "python -m uvicorn autohelper.app:build_app --host 127.0.0.1 --port 8100 --reload --factory"
 
 [tasks.venv]
@@ -25,6 +26,8 @@ run = "curl -s http://localhost:8100/clickup/validate"
 
 [tasks."ui:build"]
 description = "Build UI into autohelper/gui/artists-dist"
+sources = ["ui/src/**/*", "ui/index.html", "ui/vite.config.ts"]
+outputs = ["autohelper/gui/artists-dist/contacts-settings.html"]
 run = "pnpm --filter autohelper-ui build"
 
 [tasks."ui:dev"]

@@ -11,6 +11,8 @@ import hashlib
 import logging
 from pathlib import Path
 
+import ftfy
+
 from .types import ContactRecord
 
 logger = logging.getLogger(__name__)
@@ -120,7 +122,7 @@ def read_contacts_csv(path: Path) -> list[ContactRecord]:
         for row_num, row in enumerate(reader, start=2):
             kwargs: dict[str, str] = {}
             for csv_col, field_name in col_map.items():
-                value = (row.get(csv_col) or "").strip()
+                value = ftfy.fix_text((row.get(csv_col) or "").strip())
                 kwargs[field_name] = value
 
             email = kwargs.get("email_primary", "").lower()
