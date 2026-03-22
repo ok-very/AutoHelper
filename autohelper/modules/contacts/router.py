@@ -75,6 +75,15 @@ async def trigger_sync(background_tasks: BackgroundTasks) -> ContactSyncTriggerR
     )
 
 
+@router.post("/sync/stop")
+async def stop_sync() -> dict:
+    """Stop a running contact sync after the current batch."""
+    service = ContactSyncService()
+    if service.stop():
+        return {"ok": True, "message": "Stop requested"}
+    return {"ok": False, "message": "No sync running"}
+
+
 @router.get("/exchange/status")
 async def exchange_status() -> dict:
     """Return current Exchange session state (disconnected|connecting|connected)."""

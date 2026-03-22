@@ -113,8 +113,8 @@ class Settings(BaseSettings):
     contact_sync_managed_prefix: str = "BFA-"  # Prefix to identify managed contacts
 
     # Exchange Connection
-    exchange_email: str = ""
-    exchange_password: str = ""
+    exchange_email: str = Field(default="", validation_alias=AliasChoices("EXCHANGE_EMAIL", "AUTOHELPER_EXCHANGE_EMAIL", "exchange_email"))
+    exchange_password: str = Field(default="", validation_alias=AliasChoices("EXCHANGE_PASSWORD", "AUTOHELPER_EXCHANGE_PASSWORD", "exchange_password"))
 
     # ClickUp Integration — env vars read without AUTOHELPER_ prefix
     clickup_token: str = Field(default="", validation_alias=AliasChoices("CLICKUP_TOKEN", "AUTOHELPER_CLICKUP_TOKEN", "clickup_token"))

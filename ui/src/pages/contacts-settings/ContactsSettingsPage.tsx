@@ -63,6 +63,18 @@ function ExchangeConnectionCard() {
     })
   }, [])
 
+  // ── Heartbeat while connected — detect dead session ─────────
+  useEffect(() => {
+    if (phase !== 'connected') return
+    const iv = setInterval(async () => {
+      try {
+        const st = await api.contacts.exchangeStatus()
+        if (st.state !== 'connected') setPhase('ready')
+      } catch { /* keep checking */ }
+    }, 10_000)
+    return () => clearInterval(iv)
+  }, [phase])
+
   // ── Poll during connecting phase ─────────────────────────────
   useEffect(() => {
     if (phase !== 'connecting') return
@@ -390,6 +402,13 @@ function SyncStatusCard() {
         <button className="btn btn-sm btn-primary" onClick={syncNow} disabled={syncing}>
           {syncing ? 'Syncing\u2026' : 'Sync Now'}
         </button>
+        {syncing && (
+          <button className="btn btn-sm" style={{ color: 'var(--color-error)' }} onClick={async () => {
+            await api.contacts.stopSync().catch(() => {})
+            setFeedback('Stop requested — finishing current batch')
+            setFeedbackErr(false)
+          }}>Stop</button>
+        )}
         <label style={{ display: 'flex', alignItems: 'center', gap: '4px', fontSize: '12px', cursor: 'pointer' }}>
           <input type="checkbox" checked={dryRun} onChange={e => setDryRun(e.target.checked)} />
           Dry run

@@ -85,7 +85,7 @@ while ($true) {
                         if ($kv.Value) { $cleaned[$kv.Key] = $kv.Value }
                     }
 
-                    New-MailContact @cleaned -ErrorAction Stop
+                    New-MailContact @cleaned -ErrorAction Stop | Out-Null
 
                     # Set additional properties via Set-Contact
                     $setParams = @{ Identity = $contact.ExternalEmailAddress }
@@ -100,18 +100,22 @@ while ($true) {
                     if ($contact.CountryOrRegion) { $setParams.CountryOrRegion = $contact.CountryOrRegion }
 
                     if ($setParams.Count -gt 1) {
-                        Set-Contact @setParams -ErrorAction Stop
+                        Set-Contact @setParams -ErrorAction Stop | Out-Null
                     }
 
                     if ($contact.CustomAttribute1) {
                         Set-MailContact -Identity $contact.ExternalEmailAddress `
-                            -CustomAttribute1 $contact.CustomAttribute1 -ErrorAction Stop
+                            -CustomAttribute1 $contact.CustomAttribute1 -ErrorAction Stop | Out-Null
                     }
 
                     $resp.created++
                 }
                 catch {
-                    $resp.errors += "Create $($contact.ExternalEmailAddress): $($_.Exception.Message)"
+                    if ($_.Exception.Message -match "multiple recipients matching identity") {
+                        $resp.created++  # already exists in Exchange = success
+                    } else {
+                        $resp.errors += "Create $($contact.ExternalEmailAddress): $($_.Exception.Message)"
+                    }
                 }
             }
 
@@ -120,7 +124,7 @@ while ($true) {
                 try {
                     if ($contact.DisplayName) {
                         Set-MailContact -Identity $contact.ExternalEmailAddress `
-                            -DisplayName $contact.DisplayName -ErrorAction Stop
+                            -DisplayName $contact.DisplayName -ErrorAction Stop | Out-Null
                     }
 
                     $setParams = @{ Identity = $contact.ExternalEmailAddress }
@@ -138,7 +142,7 @@ while ($true) {
 
                     if ($contact.CustomAttribute1) {
                         Set-MailContact -Identity $contact.ExternalEmailAddress `
-                            -CustomAttribute1 $contact.CustomAttribute1 -ErrorAction Stop
+                            -CustomAttribute1 $contact.CustomAttribute1 -ErrorAction Stop | Out-Null
                     }
 
                     $resp.updated++
@@ -151,7 +155,7 @@ while ($true) {
             # ── Deletes ──
             foreach ($identity in $cmd.delete) {
                 try {
-                    Remove-MailContact -Identity $identity -Confirm:$false -ErrorAction Stop
+                    Remove-MailContact -Identity $identity -Confirm:$false -ErrorAction Stop | Out-Null
                     $resp.deleted++
                 }
                 catch {

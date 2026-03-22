@@ -313,15 +313,7 @@ function IntegrationsTab() {
           : undefined}
       />
 
-      {/* Exchange */}
-      {status.exchange.configured && (
-        <IntegrationCard
-          provider={PROVIDERS.exchange}
-          connected={status.exchange.configured}
-          source={status.exchange.source as SourceType}
-          account={status.exchange.email.value}
-        />
-      )}
+      {/* Exchange — managed in Contacts Settings */}
 
       {/* AutoArt */}
       <IntegrationCard
