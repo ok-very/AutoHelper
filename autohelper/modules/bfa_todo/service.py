@@ -446,11 +446,186 @@ def update_project_phase(uid: str, phase: str) -> dict[str, Any] | None:
     return project
 
 
+def _generate_preamble_lists() -> None:
+    """Regenerate the preamble-lists entry from Monday overview data.
+
+    Categorizes projects by phase/state and renders as styled HTML matching
+    the existing GDocs formatting. Updates the DB entry in place.
+    """
+    from collections import defaultdict
+
+    from autohelper.modules.bfa_todo.pipeline.repo import BfaProjectRepo
+    from autohelper.modules.contacts.hub import resolve_project_contact
+
+    repo = BfaProjectRepo()
+    entries = repo.get_all(include_archived=False)
+    projects = [e for e in entries if e.get("type") == "project"]
+
+    if not projects:
+        logger.info("No BFA projects — skipping preamble-lists generation")
+        return
+
+    # Categorize projects by phase and status
+    categories: dict[str, list[dict]] = defaultdict(list)
+    CATEGORY_ORDER = [
+        "Proposals (New Projects)",
+        "Art Plans to be drafted",
+        "Longlists",
+        "Proposals Pending (Sent)",
+        "Artist Contracts (To be drafted)",
+        "Artist Contracts (In Negotiation)",
+        "Final Documents and Installation",
+        "ON HOLD",
+    ]
+
+    for p in projects:
+        phase = p.get("bfa_phase_canonical") or "TBC"
+        status = p.get("status", "active")
+        rec_id = p.get("project_record_id")
+
+        # Resolve PM and selected artist from hub
+        pm_contact = resolve_project_contact(rec_id, "project_coordinator") if rec_id else None
+        artist_contact = resolve_project_contact(rec_id, "selected_artist") if rec_id else None
+        artist_name = artist_contact.full_name if artist_contact else ""
+
+        entry = {
+            "name": p.get("fields", {}).get("project_name", ""),
+            "client": p.get("fields", {}).get("client", ""),
+            "phase": phase,
+            "status": status,
+            "pm_name": pm_contact.full_name if pm_contact else "",
+            "artist": artist_name,
+            "install_date": p.get("fields", {}).get("install_date", ""),
+            "uid": p["uid"],
+        }
+
+        if status == "on_hold":
+            categories["ON HOLD"].append(entry)
+        elif phase in ("", "TBC", "1. Project Initiation"):
+            categories["Proposals (New Projects)"].append(entry)
+        elif phase in ("2. PPAP", "3. DPAP"):
+            categories["Art Plans to be drafted"].append(entry)
+        elif phase == "4.1. Artist Selection SP#1":
+            categories["Longlists"].append(entry)
+        elif phase in ("4.2. Artist Selection SP#2", "5. Artist Contract"):
+            if artist_name:
+                categories["Artist Contracts (In Negotiation)"].append(entry)
+            else:
+                categories["Artist Contracts (To be drafted)"].append(entry)
+        elif phase in ("9. 100% Fabrication/Install", "10. Final Documents"):
+            categories["Final Documents and Installation"].append(entry)
+        # phases 6-8 are active work — they appear as main project entries, not in preamble-lists
+
+    def _pm_initials(name: str) -> str:
+        if not name:
+            return "?"
+        pms = [n.strip() for n in name.split(",") if n.strip()]
+        initials = []
+        for pm in pms:
+            parts = [w for w in pm.split() if w]
+            initials.append("".join(p[0] for p in parts).upper())
+        return "/".join(initials)
+
+    def _format_line(entry: dict, detail: str = "") -> str:
+        pm = _pm_initials(entry["pm_name"])
+        name = entry["name"] or entry["client"]
+        suffix = f" - {detail}" if detail else ""
+        return f"({pm}) {name}{suffix}"
+
+    # HTML patterns (from existing preamble-lists)
+    _P_BOLD = (
+        '<p class="c18 c22" style=\'margin:0; color:#000; font-size:10pt; '
+        'font-family:"Calibri"; padding-top:0; padding-bottom:0; '
+        'line-height:1.15 !important; text-align:left; orphans:2; widows:2\' align="left">'
+        '<span class="c16 c34 c20 c40" style=\'text-decoration-skip-ink:none; '
+        '-webkit-text-decoration-skip:none; color:#000; text-decoration:underline; '
+        'vertical-align:baseline; font-family:"Calibri"; font-style:normal; '
+        'font-size:10pt; font-weight:700\' valign="baseline">'
+    )
+    _P_NORMAL = (
+        '<p class="c21" style=\'margin:0; color:#000; font-size:10pt; '
+        'font-family:"Calibri"; padding-top:0; padding-bottom:0; '
+        'line-height:1.15 !important; text-align:left\' align="left">'
+        '<span>'
+    )
+
+    def _html_bold(text: str) -> str:
+        esc = text.replace("&", "&amp;").replace("<", "&lt;")
+        return f"{_P_BOLD}{esc}</span></p>"
+
+    def _html_normal(text: str) -> str:
+        esc = text.replace("&", "&amp;").replace("<", "&lt;")
+        return f"{_P_NORMAL}{esc}</span></p>"
+
+    text_lines: list[str] = []
+    html_lines: list[str] = []
+
+    for cat_name in CATEGORY_ORDER:
+        items = categories.get(cat_name, [])
+        if not items and cat_name not in ("Proposals (New Projects)", "ON HOLD"):
+            continue
+
+        text_lines.append(cat_name)
+        html_lines.append(_html_bold(cat_name))
+
+        for entry in sorted(items, key=lambda x: x["name"]):
+            if cat_name == "Art Plans to be drafted":
+                detail = entry["phase"].split(". ", 1)[-1] if ". " in entry["phase"] else ""
+                line = _format_line(entry, detail)
+            elif cat_name == "Longlists":
+                line = _format_line(entry, "EOI")
+            elif cat_name.startswith("Artist Contracts"):
+                artist = entry["artist"]
+                if artist and artist.lower() not in entry["name"].lower():
+                    line = _format_line(entry, artist)
+                else:
+                    line = _format_line(entry)
+            elif cat_name == "Final Documents and Installation":
+                line = _format_line(entry, entry.get("install_date") or "")
+            else:
+                line = _format_line(entry)
+
+            text_lines.append(line)
+            html_lines.append(_html_normal(line))
+
+        # Blank line between categories
+        text_lines.append("")
+        html_lines.append('<p class="c21" style=\'margin:0\'><span></span></p>')
+
+    # Also append any manual_entries from the existing preamble-lists
+    preamble_lists = _project_repo.get("e2adb95f-4ae7-5d77-916f-bb6b714e045a")
+    if preamble_lists:
+        manual = preamble_lists.get("fields", {}).get("manual_entries", [])
+        if manual:
+            text_lines.append("Other")
+            html_lines.append(_html_bold("Other"))
+            for entry in manual:
+                text_lines.append(entry)
+                html_lines.append(_html_normal(entry))
+
+    # Update the preamble-lists entry
+    if preamble_lists:
+        preamble_lists["sections"]["content"]["text"] = "\n".join(text_lines)
+        preamble_lists["sections"]["content"]["html"] = "\n".join(html_lines)
+        _project_repo.upsert(preamble_lists)
+        logger.info(
+            "Generated preamble-lists: %d lines across %d categories",
+            len(text_lines),
+            sum(1 for c in CATEGORY_ORDER if categories.get(c)),
+        )
+
+
 def render_pipeline() -> dict[str, Any]:
     """Run the render pipeline: load from SQLite -> render HTML + JSON + GDocs payloads."""
     from .pipeline.renderer import render_all
 
     _ensure_seeded()
+
+    # Regenerate preamble-lists from Monday overview
+    try:
+        _generate_preamble_lists()
+    except Exception as e:
+        logger.warning("Preamble-lists generation failed: %s", e)
 
     projects = _project_repo.get_all(include_archived=False)
     if not projects:
@@ -835,12 +1010,12 @@ async def push_changes_to_clickup(uids: list[str]) -> dict[str, Any]:
     ClickUp task with current BFA fields and sections.
     """
     from .adapter import project_to_clickup_updates
-    from .clickup_sync import _find_existing_entry
     from autohelper.modules.clickup.client import ClickUpClient
     from autohelper.modules.projects.store import get_project_store
 
     store = get_project_store()
     all_project_records = store.list_all()
+    records_by_id = {pr.id: pr for pr in all_project_records}
 
     updated = 0
     errors: list[str] = []
@@ -851,20 +1026,30 @@ async def push_changes_to_clickup(uids: list[str]) -> dict[str, Any]:
             errors.append(f"BFA entry {uid} not found")
             continue
 
-        # Find matching ProjectRecord (has clickup_list_id)
         fields = entry.get("fields", {})
         proj_name = fields.get("project_name", "")
         client = fields.get("client", "")
 
+        # Primary: use stored project_record_id
         record = None
-        for pr in all_project_records:
-            if (proj_name.lower() in pr.project_name.lower()
-                    or pr.project_name.lower() in proj_name.lower()):
-                record = pr
-                break
-            if client and client.lower() in (pr.developer_name or "").lower():
-                record = pr
-                break
+        rec_id = entry.get("project_record_id")
+        if rec_id:
+            record = records_by_id.get(rec_id)
+
+        # Fallback: name-based matching (legacy entries)
+        if not record:
+            for pr in all_project_records:
+                if (proj_name.lower() in pr.project_name.lower()
+                        or pr.project_name.lower() in proj_name.lower()):
+                    record = pr
+                    break
+                if client and client.lower() in (pr.developer_name or "").lower():
+                    record = pr
+                    break
+            # Backfill the identity link
+            if record and not rec_id:
+                entry["project_record_id"] = record.id
+                _project_repo.upsert(entry)
 
         if not record or not record.clickup_list_id:
             errors.append(f"No ClickUp project for {client} - {proj_name}")
