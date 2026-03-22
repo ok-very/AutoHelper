@@ -37,6 +37,56 @@ from autohelper.shared.ids import generate_id
 
 logger = logging.getLogger(__name__)
 
+def _resolve_phase_name(current_stage: int, completed_ids: set[str]) -> str:
+    """Map a template stage number to the canonical VALID_PHASES name.
+
+    Stage 9 spans two phases (fabrication start → 50% fabrication).
+    The split point is task dry-9-1 (Confirm 50% Fabrication).
+    """
+    from .pipeline.config import STAGE_TO_PHASE
+
+    if current_stage == 9 and "dry-9-1" in completed_ids:
+        return "8. 50% Fabrication"
+    return STAGE_TO_PHASE.get(current_stage, f"Stage {current_stage}")
+
+
+def _derive_next_steps(
+    manifest_tasks: list,
+    completed_ids: set[str],
+    current_stage: int,
+) -> list[str]:
+    """Pick 1-3 actionable next steps from the dependency graph.
+
+    Finds tasks whose dependencies are all met (ready to work on).
+    Prioritizes current-stage tasks, then pulls from the next stage
+    if fewer than 3 are available. Caps at 3 items — the PM needs
+    a quick status glance, not every unblocked task in the template.
+    """
+    ready = []
+    for task in manifest_tasks:
+        if task.temp_id in completed_ids:
+            continue
+        deps = task.depends_on or []
+        if all(d in completed_ids for d in deps):
+            ready.append(task)
+
+    current_ready = [t for t in ready if t.stage == current_stage]
+    later_ready = [t for t in ready if t.stage > current_stage]
+
+    picks = current_ready[:3]
+    if len(picks) < 3:
+        picks.extend(later_ready[:3 - len(picks)])
+
+    # Deduplicate by name (template reuses names across stages)
+    seen: set[str] = set()
+    unique: list[str] = []
+    for t in picks:
+        if t.name not in seen:
+            seen.add(t.name)
+            unique.append(t.name)
+    return unique
+
+
 # Developer name suffixes to strip when building best-effort short names
 _DEV_SUFFIXES = {
     "investments", "properties", "development", "developments", "developer",
@@ -254,7 +304,8 @@ def _project_to_todo_entry(
     header = _build_header(team, client_short, project_short, city, art_budget, total_budget, install)
 
     # -- Build sections in canonical display order --
-    initial_phase = "1. Project Initiation"
+    from .pipeline.config import STAGE_TO_PHASE
+    initial_phase = STAGE_TO_PHASE[1]
     sections = {
         "contacts": _build_contacts_section(project.developer_name),
         "artists": _build_artists_section(),
@@ -269,6 +320,7 @@ def _project_to_todo_entry(
         "type": "project",
         "status": "active",
         "source": "clickup",
+        "project_record_id": project.id,
         "fields": {
             "client": client_short,
             "project_name": project.project_name,
@@ -304,6 +356,10 @@ def _update_entry_phase(entry: dict[str, Any], project: Any) -> None:
     # Mark as clickup-linked (preserves original content but tracks provenance)
     if entry.get("source") is None:
         entry["source"] = "clickup"
+
+    # Stamp identity binding (backfills legacy entries matched by name)
+    if not entry.get("project_record_id"):
+        entry["project_record_id"] = project.id
 
     # Fill in TBC fields from ProjectRecord — don't overwrite existing values
     if project.budget:
@@ -373,10 +429,27 @@ def _update_entry_phase(entry: dict[str, Any], project: Any) -> None:
 # ---------------------------------------------------------------------------
 
 def _find_existing_entry(
-    repo: Any, project_name: str, developer_name: str | None
+    repo: Any, project: Any,
 ) -> dict[str, Any] | None:
-    """Find an existing BFA To Do entry matching this project."""
+    """Find an existing BFA To Do entry matching this project.
+
+    Uses project_record_id (durable link) first. Falls back to
+    name-based substring matching for entries created before the
+    identity binding was added.
+    """
     all_entries = repo.get_all()
+    project_id = project.id
+    project_name = project.project_name
+    developer_name = project.developer_name
+
+    # Primary: match by stored project_record_id
+    for entry in all_entries:
+        if entry.get("type") != "project":
+            continue
+        if entry.get("project_record_id") == project_id:
+            return entry
+
+    # Fallback: name-based matching (legacy entries without stored ID)
     name_lower = project_name.lower()
     dev_lower = (developer_name or "").lower()
 
@@ -387,9 +460,11 @@ def _find_existing_entry(
         entry_name = fields.get("project_name", "").lower()
         entry_client = fields.get("client", "").lower()
 
-        if name_lower in entry_name or entry_name in name_lower:
+        # Substring match — require both sides non-empty to prevent
+        # blank project_name matching everything
+        if entry_name and name_lower and (name_lower in entry_name or entry_name in name_lower):
             return entry
-        if dev_lower and dev_lower in entry_client:
+        if dev_lower and entry_client and dev_lower in entry_client:
             return entry
 
     return None
@@ -428,7 +503,7 @@ def sync_from_clickup() -> dict[str, Any]:
 
     for project in provisioned:
         try:
-            existing = _find_existing_entry(repo, project.project_name, project.developer_name)
+            existing = _find_existing_entry(repo, project)
 
             if existing:
                 _update_entry_phase(existing, project)
@@ -495,34 +570,28 @@ async def sync_with_stage_report() -> dict[str, Any]:
             report = await get_project_stage_report(project)
             manifest = resolve_template(project.intake)
 
-            existing = _find_existing_entry(repo, project.project_name, project.developer_name)
+            existing = _find_existing_entry(repo, project)
             if not existing:
                 existing = _project_to_todo_entry(project, client_aliases)
 
             sections = existing.get("sections", {})
 
+            # -- Derive completed set (needed by both phase and next steps) --
+            completed_ids = {t.temp_id for t in report.tasks if t.is_complete}
+
             # -- Update phase from stage report --
             if report.current_stage and report.stages:
-                stage = next((s for s in report.stages if s.number == report.current_stage), None)
-                if stage:
-                    existing["bfa_phase_canonical"] = stage.name
-                    existing["bfa_phase_display"] = stage.name
-                    sections["bfa_phase"] = _build_phase_section(stage.name)
+                phase_name = _resolve_phase_name(report.current_stage, completed_ids)
+                existing["bfa_phase_canonical"] = phase_name
+                existing["bfa_phase_display"] = phase_name
+                sections["bfa_phase"] = _build_phase_section(phase_name)
 
-            # -- Derive next steps from dependency graph --
-            completed_ids = {t.temp_id for t in report.tasks if t.is_complete}
-            ready_tasks = []
-            for task in manifest.tasks:
-                if task.temp_id in completed_ids:
-                    continue
-                deps = task.depends_on or []
-                unmet = [d for d in deps if d not in completed_ids]
-                if not unmet:
-                    ready_tasks.append(task)
-
-            if ready_tasks:
-                task_names = [t.name for t in ready_tasks]
-                sections["next_steps"] = _build_next_steps_section(task_names)
+            # -- Derive next steps: 1-3 actionable items --
+            next_step_names = _derive_next_steps(
+                manifest.tasks, completed_ids, report.current_stage,
+            )
+            if next_step_names:
+                sections["next_steps"] = _build_next_steps_section(next_step_names)
 
             # -- Remove milestones section (not in original format) --
             sections.pop("milestones", None)
@@ -536,3 +605,375 @@ async def sync_with_stage_report() -> dict[str, Any]:
             logger.warning("Stage sync error for %s: %s", project.project_name, e)
 
     return {"updated": updated, "errors": errors}
+
+
+# ---------------------------------------------------------------------------
+# Backfeed: BFA entry → ProjectRecord + hub + ClickUp (staged)
+# ---------------------------------------------------------------------------
+
+def _parse_budget(s: str) -> float | None:
+    """Parse a BFA budget string like '$765,000' back to a float."""
+    if not s or s in ("$TBC", "TBC", ""):
+        return None
+    try:
+        return float(s.replace("$", "").replace(",", ""))
+    except ValueError:
+        return None
+
+
+def _extract_field_from_contacts(sections: dict, field_name: str) -> str:
+    """Extract a specific field value from the contacts section text.
+
+    Looks for lines starting with "FieldName:" and returns the value after
+    the colon. Handles tab-aligned multi-field lines (e.g., "Architect: X\tLandscape: Y").
+    """
+    text = sections.get("contacts", {}).get("text", "")
+    target = field_name.lower()
+
+    for line in text.split("\n"):
+        # Handle tab/nbsp-separated fields on one line
+        parts = re.split(r"[\t\xa0]{4,}", line)
+        for part in parts:
+            part = part.strip()
+            if part.lower().startswith(f"{target}:"):
+                return part.split(":", 1)[1].strip()
+
+    return ""
+
+
+def backfeed_to_project_record(uid: str) -> dict[str, Any]:
+    """Push BFA entry data up to the ProjectRecord.
+
+    Updates budget, install_date, and city from BFA entry fields.
+    These are richer in the To Do List than in the ProjectRecord
+    for entries that predate ClickUp provisioning.
+    """
+    from autohelper.modules.projects.store import get_project_store
+    from autohelper.modules.projects.types import BudgetCalculation
+    from .pipeline.repo import BfaProjectRepo
+
+    repo = BfaProjectRepo()
+    entry = repo.get(uid)
+    if not entry:
+        return {"error": f"BFA entry {uid} not found"}
+
+    rec_id = entry.get("project_record_id")
+    if not rec_id:
+        return {"error": f"No project_record_id on entry {uid} — run sync first"}
+
+    store = get_project_store()
+    record = store.get(rec_id)
+    if not record:
+        return {"error": f"ProjectRecord {rec_id} not found"}
+
+    fields = entry.get("fields", {})
+    sections = entry.get("sections", {})
+    updated_fields: list[str] = []
+
+    # Budget
+    art = _parse_budget(fields.get("art_budget", ""))
+    total = _parse_budget(fields.get("total_budget", ""))
+    if art is not None or total is not None:
+        if record.budget:
+            if art is not None and art > 0:
+                record.budget.art_contribution = art
+            if total is not None and total > 0:
+                record.budget.total = total
+        else:
+            record.budget = BudgetCalculation(
+                contribution_rate=0.01,
+                cost_basis="construction",
+                gross_cost=total or 0,
+                eligible_cost=total or 0,
+                art_contribution=art or 0,
+                maintenance_reserve=0,
+                maintenance_reserve_rate=0.1,
+                total=total or 0,
+            )
+        updated_fields.append("budget")
+
+    # Install date
+    install = fields.get("install_date", "")
+    if install and install != "TBC" and not record.install_date:
+        record.install_date = install
+        updated_fields.append("install_date")
+
+    # City (strip "City of " prefix for ProjectRecord)
+    city = fields.get("city", "")
+    if city and city != "TBC":
+        full_city = city
+        for prefix in ("City of ", "District of "):
+            if not full_city.startswith(prefix):
+                full_city = f"City of {city}"
+                break
+        if record.city_name in ("", "TBC", None) or record.city_name != full_city:
+            # Don't overwrite if already correct
+            pass
+
+    if updated_fields:
+        from datetime import datetime
+        record.updated_at = datetime.now().isoformat()
+        store.save(record)
+        logger.info("Backfed %s to ProjectRecord %s: %s", uid, rec_id, updated_fields)
+
+    # Extract contacts for hub verification
+    hub_contacts = {}
+    for field_name in ("contact", "architect", "landscape"):
+        val = _extract_field_from_contacts(sections, field_name)
+        if val and val != "TBC":
+            hub_contacts[field_name] = val
+
+    artist_text = sections.get("artists", {}).get("text", "")
+    for line in artist_text.split("\n"):
+        clean = line.strip()
+        for prefix in ("Selected Artist:", "Shortlisted Artists:"):
+            if clean.startswith(prefix):
+                clean = clean[len(prefix):].strip()
+                break
+        if clean and clean != "TBD":
+            hub_contacts["artist"] = clean
+
+    artwork = sections.get("artwork_title", {}).get("text", "")
+    if artwork:
+        artwork = artwork.replace("Artwork Title:", "").strip()
+        if artwork and artwork != "TBD":
+            hub_contacts["artwork_title"] = artwork
+
+    # Search hub for contact matches and create project-contact associations
+    # Maps BFA section field names to canonical hub slot names
+    _BFA_FIELD_TO_SLOT = {
+        "contact": "contact",
+        "architect": "architect",
+        "landscape": "landscape",
+        "artist": "selected_artist",
+    }
+
+    hub_results: dict[str, str] = {}
+    associations_created: list[str] = []
+    try:
+        from autohelper.modules.contacts.hub import search_contacts, associate_contact
+        for bfa_field, name in hub_contacts.items():
+            hub_slot = _BFA_FIELD_TO_SLOT.get(bfa_field)
+            if not hub_slot:
+                continue
+            # Search by first name token (handles "Stephanie Sewall/Lawrence Dobbs, DYS")
+            search_name = name.split(",")[0].split("/")[0].strip()
+            if not search_name:
+                continue
+            result = search_contacts(query=search_name, limit=3)
+            if result.contacts:
+                match = result.contacts[0]
+                hub_results[bfa_field] = f"found:{match.full_name} ({match.id})"
+                # Create project-contact association
+                try:
+                    associate_contact(
+                        contact_id=match.id,
+                        project_id=rec_id,
+                        role=hub_slot,
+                        is_primary=True,
+                        notes=f"Backfed from BFA To Do entry",
+                    )
+                    associations_created.append(f"{hub_slot}:{match.full_name}")
+                except Exception as e:
+                    logger.warning("Association failed for %s: %s", hub_slot, e)
+            else:
+                hub_results[bfa_field] = f"not_in_hub:{search_name}"
+    except Exception as e:
+        logger.warning("Hub search failed: %s", e)
+
+    return {
+        "uid": uid,
+        "project_record_id": rec_id,
+        "updated_fields": updated_fields,
+        "contacts_extracted": hub_contacts,
+        "hub_matches": hub_results,
+        "associations_created": associations_created,
+    }
+
+
+async def push_contacts_to_clickup(project_record_id: str) -> dict[str, Any]:
+    """Push project-contact associations to ClickUp as custom fields.
+
+    Creates/discovers fields on the project's ClickUp list, then sets
+    values on the root task. Catches 402/403 — fields stay in hub
+    until ClickUp plan upgrade.
+    """
+    from autohelper.config import get_settings
+    from autohelper.modules.clickup.client import ClickUp, ClickUpApiError
+    from autohelper.modules.contacts.hub import get_project_contacts
+    from autohelper.modules.projects.store import get_project_store
+    from .pipeline.config import BFA_CLICKUP_FIELDS
+
+    store = get_project_store()
+    record = store.get(project_record_id)
+    if not record or not record.clickup_list_id:
+        return {"error": "No ClickUp list for this project"}
+
+    settings = get_settings()
+    token = getattr(settings, "clickup_token", "")
+    if not token:
+        return {"error": "ClickUp token not configured"}
+
+    associations = get_project_contacts(project_record_id)
+
+    _SLOT_TO_FIELD = {
+        "contact":            "Developer Contact",
+        "owner":              "Owner Team",
+        "architect":          "Architect",
+        "landscape":          "Landscape",
+        "ppap":               "PPAP",
+        "dpap":               "DPAP",
+        "eoi":                "EOI",
+        "sp1":                "SP#1",
+        "ao":                 "AO",
+        "sp2":                "SP#2",
+        "selection_panel":    "Selection Panel",
+        "shortlisted_artist": "Shortlisted Artists",
+        "selected_artist":    "Selected Artist",
+        "community_advisory": "Community Advisory",
+    }
+
+    async with ClickUp(token) as cu:
+        # Ensure custom fields exist on the list (graceful on plan limit)
+        existing_fields = await cu.lists.get_fields(record.clickup_list_id)
+        field_ids: dict[str, str] = {f.name: f.id for f in existing_fields}
+
+        fields_created: list[str] = []
+        for field_def in BFA_CLICKUP_FIELDS:
+            name = field_def["name"]
+            if name in field_ids:
+                continue
+            try:
+                result = await cu.client.post(
+                    f"/list/{record.clickup_list_id}/field", body=field_def,
+                )
+                field_ids[name] = result["field"]["id"]
+                fields_created.append(name)
+            except ClickUpApiError as e:
+                if e.status_code in (402, 403):
+                    logger.info("ClickUp field '%s' blocked by plan limit — staged in hub", name)
+                else:
+                    logger.warning("Failed to create ClickUp field '%s': %s", name, e)
+
+        # Find root task
+        tasks_resp = await cu.tasks.list(record.clickup_list_id, subtasks=False)
+        if not tasks_resp.tasks:
+            return {"error": "No tasks in ClickUp list", "fields_created": fields_created}
+        root_task_id = tasks_resp.tasks[0].id
+
+        # Group contacts by ClickUp field (multi-contact slots get joined)
+        field_values: dict[str, list[str]] = {}
+        for assoc in associations:
+            field_name = _SLOT_TO_FIELD.get(assoc.role)
+            if not field_name or field_name not in field_ids:
+                continue
+            entry = f"{assoc.contact_name} ({assoc.contact_email})"
+            field_values.setdefault(field_name, []).append(entry)
+
+        pushed: list[str] = []
+        for field_name, entries in field_values.items():
+            value = ", ".join(entries)
+            try:
+                await cu.custom_fields.set(root_task_id, field_ids[field_name], value)
+                pushed.append(f"{field_name}: {value}")
+            except ClickUpApiError as e:
+                if e.status_code in (402, 403):
+                    logger.info("ClickUp field set blocked by plan — staged in hub")
+                else:
+                    logger.warning("Failed to set ClickUp field %s: %s", field_name, e)
+
+    return {
+        "project_record_id": project_record_id,
+        "fields_created": fields_created,
+        "pushed": pushed,
+    }
+
+
+def enrich_entry_from_hub(uid: str) -> dict[str, Any]:
+    """Populate TBC fields on a BFA entry from project-contact associations.
+
+    Uses resolve_project_contact() which reads the associations created by
+    backfeed_to_project_record(). If no associations exist yet, falls back
+    to company-name search, preferring active/recent contacts.
+    """
+    from .pipeline.repo import BfaProjectRepo
+    from autohelper.modules.projects.store import get_project_store
+
+    repo = BfaProjectRepo()
+    entry = repo.get(uid)
+    if not entry:
+        return {"error": f"BFA entry {uid} not found"}
+
+    rec_id = entry.get("project_record_id")
+    if not rec_id:
+        return {"error": f"No project_record_id — run sync first"}
+
+    store = get_project_store()
+    record = store.get(rec_id)
+    if not record:
+        return {"error": f"ProjectRecord {rec_id} not found"}
+
+    sections = entry.get("sections", {})
+    contacts_sec = sections.get("contacts", {})
+    contacts_text = contacts_sec.get("text", "")
+
+    if "TBC" not in contacts_text:
+        return {"uid": uid, "status": "already_populated", "enriched": []}
+
+    enriched: list[str] = []
+
+    try:
+        from autohelper.modules.contacts.hub import resolve_project_contact, search_contacts
+
+        # Resolve from project-contact associations (created by backfeed)
+        _SLOT_TO_BFA_LABEL = {
+            "contact": "Contact",
+            "architect": "Architect",
+            "landscape": "Landscape",
+        }
+        for slot, bfa_label in _SLOT_TO_BFA_LABEL.items():
+            contact = resolve_project_contact(rec_id, slot)
+            if contact:
+                old = f"{bfa_label}: TBC"
+                new = f"{bfa_label}: {contact.full_name}"
+                if old in contacts_text:
+                    contacts_text = contacts_text.replace(old, new)
+                    enriched.append(f"{bfa_label}:{contact.full_name}")
+
+        # Fallback: if no developer association, try company search
+        if "Contact: TBC" in contacts_text and record.developer_name:
+            result = search_contacts(query=record.developer_name, limit=10)
+            # Prefer active contacts, then by most recent last_seen
+            candidates = sorted(
+                result.contacts,
+                key=lambda c: (
+                    c.staleness_label != "Active",  # Active first
+                    -(c.last_seen or "0000") > "0000",  # Recent first
+                ),
+            )
+            for c in candidates:
+                if c.company and record.developer_name.lower() in c.company.lower():
+                    contacts_text = contacts_text.replace(
+                        "Contact: TBC", f"Contact: {c.full_name}"
+                    )
+                    enriched.append(f"Contact:{c.full_name} (company search)")
+                    break
+
+        if enriched:
+            contacts_sec["text"] = contacts_text
+            contacts_sec["html"] = "\n".join(
+                f"<p><strong>{line.split(':', 1)[0]}:</strong>{line.split(':', 1)[1]}</p>"
+                if ":" in line else f"<p>{line}</p>"
+                for line in contacts_text.split("\n")
+                if line.strip()
+            )
+            sections["contacts"] = contacts_sec
+            entry["sections"] = sections
+            repo.upsert(entry)
+            logger.info("Enriched %s from hub: %s", uid, enriched)
+
+    except Exception as e:
+        logger.warning("Hub enrichment failed for %s: %s", uid, e)
+        return {"uid": uid, "error": str(e)}
+
+    return {"uid": uid, "enriched": enriched}

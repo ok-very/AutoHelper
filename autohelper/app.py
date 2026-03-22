@@ -40,6 +40,7 @@ from autohelper.modules.integrations.oauth import router as oauth_router
 from autohelper.modules.images.router import router as images_router
 from autohelper.modules.projects.router import router as projects_router
 from autohelper.modules.bfa_todo.router import router as bfa_todo_router
+from autohelper.modules.monday.router import router as monday_router
 from autohelper.sync import start_backend_poller, stop_backend_poller
 
 # Import routers
@@ -137,6 +138,11 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     from autohelper.modules.artists.watcher import get_artist_watcher
 
     get_artist_watcher().stop()
+
+    # Kill Exchange PowerShell session (prevents orphaned pwsh on reload)
+    from autohelper.modules.contacts.exchange_sync import ExchangeSession
+
+    ExchangeSession().disconnect()
 
     # Shutdown shared filesystem event bus (stops any remaining Observers)
     from autohelper.shared.fs_events import get_event_bus
@@ -239,6 +245,7 @@ def build_app(settings: Settings | None = None) -> FastAPI:
     app.include_router(images_router)
     app.include_router(projects_router)
     app.include_router(bfa_todo_router)
+    app.include_router(monday_router)
     app.include_router(dashboard_router)
 
     # Mount dashboard static assets (JS, CSS)

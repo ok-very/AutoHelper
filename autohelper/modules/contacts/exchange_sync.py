@@ -334,8 +334,82 @@ def check_exchange_prerequisites() -> dict:
     return result
 
 
+_COUNTRY_TO_ISO = {
+    "united states of america": "US",
+    "united states": "US",
+    "usa": "US",
+    "canada": "CA",
+    "united kingdom": "GB",
+    "great britain": "GB",
+    "england": "GB",
+    "scotland": "GB",
+    "wales": "GB",
+    "northern ireland": "GB",
+    "australia": "AU",
+    "germany": "DE",
+    "france": "FR",
+    "japan": "JP",
+    "china": "CN",
+    "india": "IN",
+    "mexico": "MX",
+    "brazil": "BR",
+    "italy": "IT",
+    "spain": "ES",
+    "netherlands": "NL",
+    "switzerland": "CH",
+    "sweden": "SE",
+    "norway": "NO",
+    "denmark": "DK",
+    "new zealand": "NZ",
+    "south korea": "KR",
+    "singapore": "SG",
+    "hong kong": "HK",
+    "taiwan": "TW",
+    "israel": "IL",
+}
+
+
+_ISO_COUNTRY_CODES = {
+    "AD","AE","AF","AG","AI","AL","AM","AO","AQ","AR","AS","AT","AU","AW","AX","AZ",
+    "BA","BB","BD","BE","BF","BG","BH","BI","BJ","BL","BM","BN","BO","BQ","BR","BS",
+    "BT","BV","BW","BY","BZ","CA","CC","CD","CF","CG","CH","CI","CK","CL","CM","CN",
+    "CO","CR","CU","CV","CW","CX","CY","CZ","DE","DJ","DK","DM","DO","DZ","EC","EE",
+    "EG","EH","ER","ES","ET","FI","FJ","FK","FM","FO","FR","GA","GB","GD","GE","GF",
+    "GG","GH","GI","GL","GM","GN","GP","GQ","GR","GS","GT","GU","GW","GY","HK","HM",
+    "HN","HR","HT","HU","ID","IE","IL","IM","IN","IO","IQ","IR","IS","IT","JE","JM",
+    "JO","JP","KE","KG","KH","KI","KM","KN","KP","KR","KW","KY","KZ","LA","LB","LC",
+    "LI","LK","LR","LS","LT","LU","LV","LY","MA","MC","MD","ME","MF","MG","MH","MK",
+    "ML","MM","MN","MO","MP","MQ","MR","MS","MT","MU","MV","MW","MX","MY","MZ","NA",
+    "NC","NE","NF","NG","NI","NL","NO","NP","NR","NU","NZ","OM","PA","PE","PF","PG",
+    "PH","PK","PL","PM","PN","PR","PS","PT","PW","PY","QA","RE","RO","RS","RU","RW",
+    "SA","SB","SC","SD","SE","SG","SH","SI","SJ","SK","SL","SM","SN","SO","SR","SS",
+    "ST","SV","SX","SY","SZ","TC","TD","TF","TG","TH","TJ","TK","TL","TM","TN","TO",
+    "TR","TT","TV","TW","TZ","UA","UG","UM","US","UY","UZ","VA","VC","VE","VG","VI",
+    "VN","VU","WF","WS","YE","YT","ZA","ZM","ZW",
+}
+
+
+def validate_contacts(contacts: list[ContactRecord]) -> list[str]:
+    """Validate contacts for Exchange compatibility. Returns warning strings."""
+    warnings: list[str] = []
+    for c in contacts:
+        if not c.email_primary:
+            warnings.append(f"Missing email: {c.full_name or '(no name)'}")
+        if c.country:
+            normalized = _COUNTRY_TO_ISO.get(c.country.lower(), c.country)
+            if normalized.upper() not in _ISO_COUNTRY_CODES:
+                warnings.append(f"Unmapped country '{c.country}' on {c.email_primary}")
+        display = c.full_name or c.email_primary
+        if display and len(display) > 256:
+            warnings.append(f"DisplayName too long ({len(display)} chars) on {c.email_primary}")
+    return warnings
+
+
 def _build_exchange_contact(contact: ContactRecord, managed_prefix: str) -> dict:
     """Map a ContactRecord to Exchange Online contact properties."""
+    country = contact.country
+    if country:
+        country = _COUNTRY_TO_ISO.get(country.lower(), country)
     return {
         "Identity": f"{managed_prefix}{contact.email_primary}",
         "DisplayName": contact.full_name or contact.email_primary,
@@ -350,7 +424,7 @@ def _build_exchange_contact(contact: ContactRecord, managed_prefix: str) -> dict
         "City": contact.city,
         "StateOrProvince": contact.state,
         "PostalCode": contact.postal_code,
-        "CountryOrRegion": contact.country,
+        "CountryOrRegion": country,
         "CustomAttribute1": contact.category_canonical,
     }
 
@@ -379,7 +453,7 @@ def sync_contacts_to_exchange(
     to_update: list[ContactRecord],
     to_delete: list[str],
     managed_prefix: str,
-    batch_size: int = 200,
+    batch_size: int = 50,
 ) -> dict:
     """Push contacts to Exchange via the persistent session, in batches."""
     session = ExchangeSession()
@@ -395,7 +469,15 @@ def sync_contacts_to_exchange(
     max_len = max(len(all_creates), len(all_updates), len(all_deletes), 1)
     batch_num = 0
 
+    from .service import ContactSyncService
+
     for offset in range(0, max_len, batch_size):
+        # Check stop flag between batches
+        if ContactSyncService()._stop_requested:
+            logger.info("Exchange sync stopped by user after batch %d", batch_num)
+            totals["errors"].append("Stopped by user")
+            break
+
         batch_c = all_creates[offset:offset + batch_size]
         batch_u = all_updates[offset:offset + batch_size]
         batch_d = all_deletes[offset:offset + batch_size]

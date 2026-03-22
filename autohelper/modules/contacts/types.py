@@ -49,6 +49,7 @@ class SyncResult:
     deleted: int = 0
     unchanged: int = 0
     errors: list[str] = field(default_factory=list)
+    warnings: list[str] = field(default_factory=list)
     dry_run: bool = False
     file_hash: str = ""
     csv_row_count: int = 0

@@ -44,4 +44,20 @@ kill_port 5173 "Frontend"
 kill_port 5174 "Frontend (Alt)"
 kill_port 5175 "Frontend (Alt)"
 
+# Kill orphaned pwsh processes (Exchange Online sessions)
+echo "   Checking for orphaned pwsh (Exchange sessions)..."
+if [[ "$OSTYPE" == "msys" || "$OSTYPE" == "cygwin" ]]; then
+    pids=$(wmic process where "name='pwsh.exe' and commandline like '%exchange_session%'" get processid 2>/dev/null | grep -o '[0-9]*')
+    for pid in $pids; do
+        echo "   Found Exchange pwsh PID $pid. Killing..."
+        taskkill //F //PID "$pid" > /dev/null 2>&1
+    done
+else
+    pids=$(pgrep -f "exchange_session" 2>/dev/null)
+    for pid in $pids; do
+        echo "   Found Exchange pwsh PID $pid. Killing..."
+        kill -9 "$pid" > /dev/null 2>&1
+    done
+fi
+
 echo "✅ Done."

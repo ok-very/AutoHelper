@@ -75,6 +75,7 @@ class ContactSyncService:
         self._last_result: SyncResult | None = None
         self._last_sync: datetime | None = None
         self._running = False
+        self._stop_requested = False
         self._run_lock = threading.Lock()
         self._initialized = True
 
@@ -82,6 +83,14 @@ class ContactSyncService:
     def is_running(self) -> bool:
         with self._run_lock:
             return self._running
+
+    def stop(self) -> bool:
+        """Request the running sync to stop after the current batch."""
+        if self._running:
+            self._stop_requested = True
+            logger.info("Sync stop requested")
+            return True
+        return False
 
     @property
     def last_result(self) -> SyncResult | None:
@@ -154,7 +163,7 @@ class ContactSyncService:
                 result.updated,
                 result.deleted,
                 result.unchanged,
-                json.dumps(result.errors),
+                json.dumps(result.errors + [f"[warn] {w}" for w in result.warnings]),
                 1 if result.dry_run else 0,
                 result.file_hash,
                 result.csv_row_count,
@@ -241,79 +250,90 @@ class ContactSyncService:
         exchange_updates: list[ContactRecord] = []
         exchange_delete_ids: list[str] = []
 
-        # Process upserts
+        # Classify upserts into creates vs updates
         for contact in to_upsert:
             existing = db.execute(
                 "SELECT exchange_identity FROM contact_sync_contacts WHERE email_primary = ?",
                 (contact.email_primary,),
             ).fetchone()
 
-            if dry_run:
-                if existing:
-                    result.updated += 1
-                else:
-                    result.created += 1
-                continue
-
-            exchange_identity = f"{managed_prefix}{contact.email_primary}"
-
             if existing:
                 result.updated += 1
-                exchange_updates.append(contact)
+                if not dry_run:
+                    exchange_updates.append(contact)
             else:
                 result.created += 1
-                exchange_creates.append(contact)
+                if not dry_run:
+                    exchange_creates.append(contact)
 
-            # Update tracking DB
-            db.execute(
-                """INSERT INTO contact_sync_contacts (email_primary, row_hash, exchange_identity)
-                   VALUES (?, ?, ?)
-                   ON CONFLICT(email_primary) DO UPDATE SET
-                   row_hash = excluded.row_hash,
-                   exchange_identity = excluded.exchange_identity,
-                   updated_at = datetime('now')""",
-                (contact.email_primary, contact.row_hash(), exchange_identity),
-            )
-
-        # Process deletions
+        # Classify deletions
         for email in to_delete:
-            if dry_run:
-                result.deleted += 1
-                continue
-
-            stored_row = db.execute(
-                "SELECT exchange_identity FROM contact_sync_contacts WHERE email_primary = ?",
-                (email,),
-            ).fetchone()
-
-            if stored_row:
-                exchange_delete_ids.append(stored_row[0])
-
             result.deleted += 1
-            db.execute(
-                "DELETE FROM contact_sync_contacts WHERE email_primary = ?",
-                (email,),
-            )
-
-        db.commit()
+            if not dry_run:
+                stored_row = db.execute(
+                    "SELECT exchange_identity FROM contact_sync_contacts WHERE email_primary = ?",
+                    (email,),
+                ).fetchone()
+                if stored_row:
+                    exchange_delete_ids.append(stored_row[0])
 
         if dry_run:
+            from .exchange_sync import validate_contacts
+            result.warnings = validate_contacts(to_upsert)
             result.status = "dry_run"
-        else:
-            # Batch Exchange push via PowerShell
-            if exchange_creates or exchange_updates or exchange_delete_ids:
-                ex_result = self._push_to_exchange(
-                    exchange_creates, exchange_updates, exchange_delete_ids, managed_prefix,
+            return
+
+        # Push to Exchange first, then update tracking DB based on what succeeded
+        if exchange_creates or exchange_updates or exchange_delete_ids:
+            ex_result = self._push_to_exchange(
+                exchange_creates, exchange_updates, exchange_delete_ids, managed_prefix,
+            )
+            if ex_result.get("errors"):
+                result.errors.extend(ex_result["errors"])
+            ex_created = ex_result.get("created", 0)
+            ex_updated = ex_result.get("updated", 0)
+            ex_deleted = ex_result.get("deleted", 0)
+            logger.info(
+                "Exchange push: %d created, %d updated, %d deleted",
+                ex_created, ex_updated, ex_deleted,
+            )
+
+            # Only track contacts that Exchange actually accepted
+            for contact in exchange_creates[:ex_created]:
+                identity = f"{managed_prefix}{contact.email_primary}"
+                db.execute(
+                    """INSERT INTO contact_sync_contacts (email_primary, row_hash, exchange_identity)
+                       VALUES (?, ?, ?)
+                       ON CONFLICT(email_primary) DO UPDATE SET
+                       row_hash = excluded.row_hash,
+                       exchange_identity = excluded.exchange_identity,
+                       updated_at = datetime('now')""",
+                    (contact.email_primary, contact.row_hash(), identity),
                 )
-                if ex_result.get("errors"):
-                    result.errors.extend(ex_result["errors"])
-                logger.info(
-                    "Exchange push: %d created, %d updated, %d deleted",
-                    ex_result.get("created", 0),
-                    ex_result.get("updated", 0),
-                    ex_result.get("deleted", 0),
+            for contact in exchange_updates[:ex_updated]:
+                identity = f"{managed_prefix}{contact.email_primary}"
+                db.execute(
+                    """INSERT INTO contact_sync_contacts (email_primary, row_hash, exchange_identity)
+                       VALUES (?, ?, ?)
+                       ON CONFLICT(email_primary) DO UPDATE SET
+                       row_hash = excluded.row_hash,
+                       exchange_identity = excluded.exchange_identity,
+                       updated_at = datetime('now')""",
+                    (contact.email_primary, contact.row_hash(), identity),
                 )
-            result.status = "completed"
+            for email in to_delete[:ex_deleted]:
+                db.execute(
+                    "DELETE FROM contact_sync_contacts WHERE email_primary = ?",
+                    (email,),
+                )
+            db.commit()
+
+            # Update result counts to reflect what actually happened
+            result.created = ex_created
+            result.updated = ex_updated
+            result.deleted = ex_deleted
+
+        result.status = "completed"
 
     def _push_to_exchange(
         self,
@@ -452,5 +472,6 @@ class ContactSyncService:
                 logger.exception("Failed to log sync run %s", sync_id)
             with self._run_lock:
                 self._running = False
+                self._stop_requested = False
 
         return result

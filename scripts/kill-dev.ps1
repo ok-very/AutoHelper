@@ -123,6 +123,39 @@ else {
     Write-Host "[i] No orphaned Python processes found" -ForegroundColor Gray
 }
 
+# Kill orphaned pwsh processes (Exchange Online sessions)
+Write-Host ""
+Write-Host "[*] Checking for orphaned pwsh processes (Exchange sessions)..." -ForegroundColor Yellow
+
+[array]$pwshProcesses = @(Get-Process -Name "pwsh" -ErrorAction SilentlyContinue | Where-Object {
+    try {
+        $cmdLine = (Get-CimInstance Win32_Process -Filter "ProcessId = $($_.Id)" -ErrorAction SilentlyContinue).CommandLine
+        if ($cmdLine) {
+            return $cmdLine -match "exchange_session" -or $cmdLine -match "ExchangeOnline"
+        }
+        return $false
+    }
+    catch {
+        return $false
+    }
+})
+
+if ($null -ne $pwshProcesses -and $pwshProcesses.Count -gt 0) {
+    Write-Host "[i] Found $($pwshProcesses.Count) Exchange pwsh process(es)" -ForegroundColor Yellow
+    foreach ($proc in $pwshProcesses) {
+        try {
+            Stop-Process -Id $proc.Id -Force -ErrorAction Stop
+            Write-Host "[OK] Stopped pwsh process $($proc.Id)" -ForegroundColor Green
+        }
+        catch {
+            Write-Host "[!] Could not stop pwsh process $($proc.Id): $($_.Exception.Message)" -ForegroundColor Yellow
+        }
+    }
+}
+else {
+    Write-Host "[i] No orphaned pwsh processes found" -ForegroundColor Gray
+}
+
 Write-Host ""
 Write-Host "======================================" -ForegroundColor Green
 Write-Host "  All AutoArt processes stopped" -ForegroundColor Green

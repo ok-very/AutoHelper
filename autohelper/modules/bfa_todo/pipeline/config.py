@@ -107,6 +107,24 @@ PHASE_CANON = {
     "closeout": "Closeout",
 }
 
+# --- Template stage number → canonical phase name ---
+# Bridges bfa_templates.json ALL-CAPS stage names to the numbered
+# VALID_PHASES system used by the To Do List and Excel import.
+# Stage 9 spans two phases — refined at runtime by _resolve_phase_name().
+STAGE_TO_PHASE: dict[int, str] = {
+    1:  "1. Project Initiation",
+    2:  "2. PPAP",
+    3:  "3. DPAP",
+    4:  "3. DPAP",                      # Community engagement is part of DPAP phase
+    5:  "4.1. Artist Selection SP#1",
+    6:  "4.2. Artist Selection SP#2",
+    7:  "5. Artist Contract",
+    8:  "6. Detailed Design",
+    9:  "7. Fabrication Start",         # Refined to "8. 50% Fabrication" if dry-9-1 complete
+    10: "9. 100% Fabrication/Install",
+    11: "10. Final Documents",
+}
+
 # --- New 12-phase canonical system (Excel is ground truth) ---
 VALID_PHASES = [
     "1. Project Initiation",
@@ -205,6 +223,31 @@ EXCEL_SHEET_NAME = "1. current projects overview"
 EXCEL_HEADER_ROW = 3
 EXCEL_DATA_START_ROW = 4
 EXCEL_COMPLETED_DIVIDER = "Completed Projects"
+
+# --- ClickUp custom field schema for project metadata ---
+# Staged for deployment when ClickUp plan limit is lifted (FIELD_033).
+# _ensure_project_fields() catches 402/403 gracefully.
+BFA_CLICKUP_FIELDS = [
+    {"name": "Artwork Budget",      "type": "currency", "type_config": {"currency_type": "CAD"}},
+    {"name": "Total Budget",        "type": "currency", "type_config": {"currency_type": "CAD"}},
+    {"name": "Install Date",        "type": "short_text", "type_config": {}},
+    # Contact slots
+    {"name": "Developer Contact",   "type": "short_text", "type_config": {}},
+    {"name": "Owner Team",          "type": "short_text", "type_config": {}},
+    {"name": "Architect",           "type": "short_text", "type_config": {}},
+    {"name": "Landscape",           "type": "short_text", "type_config": {}},
+    {"name": "PPAP",                "type": "short_text", "type_config": {}},
+    {"name": "DPAP",                "type": "short_text", "type_config": {}},
+    {"name": "EOI",                 "type": "short_text", "type_config": {}},
+    {"name": "SP#1",                "type": "short_text", "type_config": {}},
+    {"name": "AO",                  "type": "short_text", "type_config": {}},
+    {"name": "SP#2",                "type": "short_text", "type_config": {}},
+    {"name": "Selection Panel",     "type": "short_text", "type_config": {}},
+    {"name": "Shortlisted Artists", "type": "short_text", "type_config": {}},
+    {"name": "Selected Artist",     "type": "short_text", "type_config": {}},
+    {"name": "Community Advisory",  "type": "short_text", "type_config": {}},
+    {"name": "Artwork Title",       "type": "short_text", "type_config": {}},
+]
 
 INLINE_FIELD_LABELS = [
     "architect", "landscape", "owner", "ppap", "dpap", "eoi",

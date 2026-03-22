@@ -16,20 +16,68 @@ from autohelper.shared.ids import generate_id
 
 logger = logging.getLogger(__name__)
 
-# Valid roles for project-contact associations
-VALID_ROLES = {
-    "developer",
-    "city_planner",
-    "artist",
-    "panel_member",
-    "architect",
-    "landscape_architect",
-    "community_advisor",
-    "indigenous_advisor",
-    "project_coordinator",
-    "engineer",
-    "other",
+# Canonical contact slots — keys used in associations, values are display labels
+CONTACT_SLOTS: dict[str, str] = {
+    # Team
+    "contact":              "Contact",
+    "owner":                "Owner",
+    "architect":            "Architect",
+    "landscape":            "Landscape",
+    # Stage contacts
+    "ppap":                 "PPAP",
+    "dpap":                 "DPAP",
+    "eoi":                  "EOI",
+    # Selection
+    "sp1":                  "SP#1",
+    "ao":                   "AO",
+    "sp2":                  "SP#2",
+    "selection_panel":      "Selection Panel",
+    # Artists
+    "shortlisted_artist":   "Shortlisted Artist",
+    "selected_artist":      "Selected Artist",
+    # Advisory
+    "community_advisory":   "Community Advisory",
+    "indigenous_advisor":   "Indigenous Advisor",
+    # Generic
+    "project_coordinator":  "Project Coordinator",
+    "engineer":             "Engineer",
+    "city_planner":         "City Planner",
+    "other":                "Other",
 }
+
+# Backward compat — old role names that map to canonical slots
+ROLE_ALIASES: dict[str, str] = {
+    "developer":            "contact",
+    "landscape_architect":  "landscape",
+    "panel_member":         "selection_panel",
+    "community_advisor":    "community_advisory",
+    "artist":               "selected_artist",
+}
+
+VALID_ROLES = set(CONTACT_SLOTS.keys()) | set(ROLE_ALIASES.keys())
+
+# Singular slots — only one contact expected per project
+SINGULAR_SLOTS = {
+    "contact", "owner", "architect", "landscape",
+    "ppap", "dpap", "eoi", "ao",
+    "selected_artist", "project_coordinator", "engineer", "city_planner",
+}
+
+# Slot → merge field names for email template resolution
+SLOT_TO_MERGE: dict[str, list[str]] = {
+    "contact":             ["developer_contact_name"],
+    "city_planner":        ["city_contact_name", "city_planner_name"],
+    "architect":           ["architect_name"],
+    "landscape":           ["landscape_architect_name"],
+    "selected_artist":     ["artist_name"],
+    "project_coordinator": ["coordinator_name"],
+    "engineer":            ["engineer_name"],
+}
+
+
+def normalize_role(role: str) -> str:
+    """Normalize a role to its canonical slot name."""
+    return ROLE_ALIASES.get(role, role)
 
 
 @dataclass
@@ -231,6 +279,43 @@ def update_contact(contact_id: str, **fields: str | None) -> HubContact | None:
     return get_contact(contact_id)
 
 
+def queue_for_exchange_sync(contact: HubContact) -> None:
+    """Queue a hub contact for Exchange sync on the next cycle.
+
+    Inserts/updates the contact_sync_contacts tracking row so the
+    ContactSyncService picks it up. Does NOT invoke PowerShell directly.
+    """
+    if not contact.email_primary:
+        return
+
+    from autohelper.config import get_settings
+    settings = get_settings()
+    managed_prefix = getattr(settings, "contact_sync_managed_prefix", "BFA-")
+
+    # Build a row_hash from the contact fields for change detection
+    import hashlib
+    parts = [
+        contact.email_primary, contact.full_name or "",
+        contact.first_name or "", contact.last_name or "",
+        contact.company or "", contact.job_title or "",
+    ]
+    row_hash = hashlib.sha256("|".join(parts).encode("utf-8")).hexdigest()[:16]
+    exchange_identity = f"{managed_prefix}{contact.email_primary}"
+
+    db = get_db()
+    db.execute(
+        """INSERT INTO contact_sync_contacts (email_primary, row_hash, exchange_identity)
+           VALUES (?, ?, ?)
+           ON CONFLICT(email_primary) DO UPDATE SET
+           row_hash = excluded.row_hash,
+           exchange_identity = excluded.exchange_identity,
+           updated_at = datetime('now')""",
+        (contact.email_primary, row_hash, exchange_identity),
+    )
+    db.commit()
+    logger.debug("Queued %s for Exchange sync", contact.email_primary)
+
+
 def delete_contact(contact_id: str) -> bool:
     """Delete a contact and its associations."""
     db = get_db()
@@ -321,9 +406,13 @@ def associate_contact(
     is_primary: bool = True,
     notes: str | None = None,
 ) -> ContactAssociation:
-    """Link a contact to a project with a role."""
+    """Link a contact to a project with a role (slot).
+
+    Accepts both canonical slot names and legacy role aliases.
+    """
     if role not in VALID_ROLES:
         raise ValueError(f"Invalid role: {role}. Must be one of: {', '.join(sorted(VALID_ROLES))}")
+    role = normalize_role(role)
 
     assoc_id = generate_id("pca")
     now = datetime.now().isoformat()
@@ -449,23 +538,12 @@ def resolve_merge_fields(project_id: str) -> dict[str, str]:
     Build a merge-field dict for a project from the contact hub.
     Used by compose_email() to fill {{name}}, {{developer_contact_name}}, etc.
     """
-    role_to_field = {
-        "developer": ["developer_contact_name"],
-        "city_planner": ["city_contact_name", "city_planner_name"],
-        "architect": ["architect_name"],
-        "landscape_architect": ["landscape_architect_name"],
-        "artist": ["artist_name"],
-        "project_coordinator": ["coordinator_name"],
-        "engineer": ["engineer_name"],
-    }
-
     fields: dict[str, str] = {}
-    for role, field_names in role_to_field.items():
-        contact = resolve_project_contact(project_id, role)
+    for slot, field_names in SLOT_TO_MERGE.items():
+        contact = resolve_project_contact(project_id, slot)
         if contact:
             for fname in field_names:
                 fields[fname] = contact.full_name
-            # Also provide email variant
-            fields[f"{role}_email"] = contact.email_primary
+            fields[f"{slot}_email"] = contact.email_primary
 
     return fields

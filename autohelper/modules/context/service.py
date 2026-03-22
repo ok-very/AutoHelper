@@ -95,6 +95,15 @@ class ContextService:
         config_store = ConfigStore()
         config = config_store.load()
 
+        # Monday client (OAuth token stored in config.json)
+        monday_token = config.get("monday_token")
+        if monday_token:
+            try:
+                self._monday_client = MondayClient(token=monday_token)
+            except Exception as e:
+                logger.warning(f"Failed to init Monday client: {e}")
+                self._monday_client = None
+
         # AutoArt client (local server, may not be running)
         # Use link_key from ConfigStore if available, otherwise fall back to settings
         autoart_url = getattr(self.settings, "autoart_api_url", "http://localhost:3001")

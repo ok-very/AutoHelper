@@ -169,6 +169,13 @@ export const api = {
 
   monday: {
     auth: () => fetchJson<{ url: string; state: string }>('/api/monday/auth'),
+    boards: () => fetchJson<any[]>('/api/monday/boards'),
+    overview: () => fetchJson<any[]>('/api/monday/overview'),
+    preview: (id: string) => fetchJson<any>(`/api/monday/boards/${id}/preview`),
+    importBoard: (id: string, municipality: string, phase = '') =>
+      post(`/api/monday/boards/${id}/import`, { municipality, phase }).then(r => r.json()),
+    importBatch: (boards: { id: string; municipality: string }[]) =>
+      post('/api/monday/import-batch', { boards }).then(r => r.json()),
   },
 
   integrations: {
@@ -184,6 +191,7 @@ export const api = {
     disconnectExchange: () => post('/contacts/exchange/disconnect').then(r => r.json()),
     exchangePrereqs: () => fetchJson<Record<string, unknown>>('/contacts/exchange/prerequisites'),
     sync: () => post('/contacts/sync').then(r => r.json()),
+    stopSync: () => post('/contacts/sync/stop').then(r => r.json()),
     // Hub endpoints
     hub: {
       search: (params: { q?: string; category?: string; staleness?: string; limit?: number; offset?: number } = {}) => {
@@ -287,6 +295,8 @@ export const api = {
       put(`/api/bfa-todo/projects/${uid}/sections/${sectionName}`, { html }).then(r => r.json()),
     updatePhase: (uid: string, phase: string) =>
       put(`/api/bfa-todo/projects/${uid}/phase`, { phase }).then(r => r.json()),
+    pushContactsToClickup: (projectRecordId: string) =>
+      post(`/api/bfa-todo/push-contacts-to-clickup/${projectRecordId}`).then(r => r.json()),
     preambles: () => fetchJson<any[]>('/api/bfa-todo/preambles'),
     preambleHtml: (uid: string) =>
       fetch(`/api/bfa-todo/preambles/${uid}/html`).then(r => {

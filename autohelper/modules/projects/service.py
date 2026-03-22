@@ -438,6 +438,7 @@ async def provision_project(project_id: str) -> ProjectRecord:
     project.updated_at = now
     project.resolved_task_count = manifest.total_tasks
     project.budget = manifest.budget
+    project.clickup_task_id_map = id_map
 
     store.save(project)
     logger.info("Provisioned project %s → ClickUp list %s", project_id, list_id)

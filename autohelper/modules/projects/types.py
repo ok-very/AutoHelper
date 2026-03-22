@@ -148,6 +148,7 @@ class ProjectRecord(BaseModel):
     clickup_folder_id: str | None = None
     clickup_workspace_id: str | None = None
     clickup_stage_field_id: str | None = None
+    clickup_task_id_map: dict[str, str] | None = None  # temp_id → ClickUp task ID
     onedrive_folder: str | None = None
     # Close-out / legal letter fields (filled by PM during project lifecycle)
     legal_address: str | None = None  # Land title description (Lot/Block/Plan)
