@@ -8,6 +8,12 @@ PYTHONIOENCODING = "utf-8"
 _.path = ["{{config_root}}/.venv/Scripts"]
 _.file = [".env", ".env.agent"]
 
+[tasks.kill]
+description = "Kill dev server + reloader on port 8100"
+run = """
+powershell -Command "Get-NetTCPConnection -LocalPort 8100 -ErrorAction SilentlyContinue | ForEach-Object { Stop-Process -Id $_.OwningProcess -Force -ErrorAction SilentlyContinue }; Get-Process pwsh -ErrorAction SilentlyContinue | Where-Object { $_.Id -ne $PID } | Stop-Process -Force -ErrorAction SilentlyContinue"
+"""
+
 [tasks.dev]
 description = "Start AutoHelper dev server"
 depends = ["ui:build"]
