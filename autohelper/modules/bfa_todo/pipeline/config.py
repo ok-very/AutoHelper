@@ -11,6 +11,12 @@ SITE_DIR = DATA_DIR / "site"
 ASSETS_DIR = SITE_DIR / "assets"
 ALIASES_FILE = DATA_DIR / "aliases.yaml"
 
+# Output directory for .docx and .pdf artifacts
+OUTPUT_DIR = Path(
+    "C:/Users/silen/OneDrive - Ballard Fine Art"
+    "/BALLARD FINE ART - ALL FILES/4. TO DO LIST/2026"
+)
+
 # Templates are bundled with the package
 TEMPLATE_DIR = Path(__file__).parent / "templates"
 

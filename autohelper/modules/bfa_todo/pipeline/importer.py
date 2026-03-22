@@ -461,7 +461,7 @@ def import_document(filepath=None):
                                 "text": "\n".join(text_parts),
                             }
                         },
-                        "fields": {},
+                        "fields": {"ownership": "curated"},
                     }
                 )
             continue

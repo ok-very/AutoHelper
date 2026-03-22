@@ -103,6 +103,21 @@ def _prepare_html_for_word(html: str) -> str:
         for sec in on_hold:
             body.append(sec)
 
+    # -- Extract project UID + header hints for SDT embedding --
+    uid_map: list[dict[str, str]] = []
+    for sec in active:
+        h3 = sec.find("h3")
+        uid_map.append({
+            "uid": sec.get("data-project-uid", ""),
+            "header": h3.get_text(strip=True) if h3 else "",
+        })
+    for sec in on_hold:
+        h3 = sec.find("h3")
+        uid_map.append({
+            "uid": sec.get("data-project-uid", ""),
+            "header": h3.get_text(strip=True) if h3 else "",
+        })
+
     # -- Update heading date --
     now = datetime.now()
     today_str = f"{now.strftime('%B')} {now.day}, {now.year}"
@@ -164,7 +179,7 @@ def _prepare_html_for_word(html: str) -> str:
     for comment in soup.find_all(string=lambda t: isinstance(t, Comment)):
         comment.extract()
 
-    return str(soup)
+    return str(soup), uid_map
 
 
 # ---------------------------------------------------------------------------
@@ -207,6 +222,36 @@ def _html_to_docx_via_word(html_path: Path, docx_path: Path) -> Path:
     return docx_path
 
 
+def _docx_to_pdf(docx_path: Path, pdf_path: Path) -> Path:
+    """Convert .docx to PDF via Word COM."""
+    import pythoncom
+    import win32com.client
+
+    pythoncom.CoInitialize()
+    word = None
+    doc = None
+    try:
+        word = win32com.client.Dispatch("Word.Application")
+        word.Visible = False
+        word.DisplayAlerts = 0
+        doc = word.Documents.Open(str(docx_path.resolve()))
+        doc.SaveAs2(str(pdf_path.resolve()), FileFormat=17)  # wdFormatPDF
+    finally:
+        if doc:
+            try:
+                doc.Close(SaveChanges=False)
+            except Exception:
+                pass
+        if word:
+            try:
+                word.Quit()
+            except Exception:
+                pass
+        pythoncom.CoUninitialize()
+
+    return pdf_path
+
+
 # ---------------------------------------------------------------------------
 # Stage 3: Post-process
 #
@@ -217,7 +262,7 @@ def _html_to_docx_via_word(html_path: Path, docx_path: Path) -> Path:
 #             (styles, spacing, page breaks) on a clean document
 # ---------------------------------------------------------------------------
 
-def _postprocess_docx(docx_path: Path) -> None:
+def _postprocess_docx(docx_path: Path, uid_map: list[dict[str, str]] | None = None) -> None:
     from docx import Document
     from docx.oxml.ns import qn
     from lxml import etree
@@ -534,10 +579,16 @@ def _postprocess_docx(docx_path: Path) -> None:
     if highlight_fixes:
         logger.info("Step 6b — converted %d shading runs to native highlight", highlight_fixes)
 
+    # ── Step 6.5: Embed SDTs for round-trip parsing ─────────────────────
+
+    if uid_map:
+        _embed_sdt_tags(doc, paras, uid_map)
+
     # ── Step 7: Save ─────────────────────────────────────────────────────
 
     doc.save(str(docx_path))
-    logger.info("Step 7 — saved: %d paras, %d sections", len(paras), len(doc.sections))
+    total_paras = len(doc.element.body.findall(f".//{qn('w:p')}"))
+    logger.info("Step 7 — saved: %d paras, %d sections", total_paras, len(doc.sections))
 
 
 # ---------------------------------------------------------------------------
@@ -610,6 +661,260 @@ def _apply_project_page_breaks(doc, first_project_idx: int) -> None:
 
 
 # ---------------------------------------------------------------------------
+# SDT (Structured Document Tag) embedding for round-trip parsing
+#
+# SDTs are Word content controls — invisible to the user, machine-readable.
+# We embed them at generation time so the parser can read them back
+# deterministically, without heuristic section/label detection.
+# ---------------------------------------------------------------------------
+
+def _create_sdt(tag_val: str, alias: str | None = None):
+    """Create a w:sdt XML element with tag and optional alias."""
+    from docx.oxml.ns import qn
+    from lxml import etree
+
+    sdt = etree.Element(qn("w:sdt"))
+    sdt_pr = etree.SubElement(sdt, qn("w:sdtPr"))
+    tag_el = etree.SubElement(sdt_pr, qn("w:tag"))
+    tag_el.set(qn("w:val"), tag_val)
+    if alias:
+        alias_el = etree.SubElement(sdt_pr, qn("w:alias"))
+        alias_el.set(qn("w:val"), alias)
+    etree.SubElement(sdt, qn("w:sdtContent"))
+    return sdt
+
+
+def _wrap_in_sdt(parent, elements: list, tag_val: str, alias: str | None = None):
+    """Wrap XML elements in a w:sdt within parent, preserving position."""
+    from docx.oxml.ns import qn
+
+    if not elements:
+        return
+    first_idx = list(parent).index(elements[0])
+    sdt = _create_sdt(tag_val, alias)
+    content = sdt.find(qn("w:sdtContent"))
+    for el in elements:
+        content.append(el)  # lxml removes from parent and adds to content
+    parent.insert(first_idx, sdt)
+
+
+def _detect_bold_label(para_el) -> str | None:
+    """Detect a bold section label from the first text-bearing run.
+
+    Returns the lowercase label text (without trailing colon) or None.
+    Only checks the first run with text — if it's not bold, returns None.
+    """
+    from docx.oxml.ns import qn
+
+    for r in para_el.findall(qn("w:r")):
+        rPr = r.find(qn("w:rPr"))
+        is_bold = False
+        if rPr is not None:
+            b = rPr.find(qn("w:b"))
+            if b is not None:
+                val = b.get(qn("w:val"))
+                is_bold = val is None or val not in ("0", "false")
+
+        t_el = r.find(qn("w:t"))
+        text = (t_el.text or "").strip() if t_el is not None else ""
+        if not text:
+            continue
+
+        if not is_bold:
+            return None  # First text-bearing run is not bold — no label
+        return text.lower().rstrip(":").strip()
+
+    return None
+
+
+def _group_paragraphs_by_section(
+    para_elements: list,
+    section_labels: dict[str, str],
+    contact_related: set[str],
+) -> list[tuple[str, list]]:
+    """Group paragraph elements by detected section label.
+
+    Uses bold-label detection (reliable since we generated the labels).
+    Folds contact-related sub-sections (architect, ppap, etc.) into "contacts".
+
+    Returns [(section_name, [elements]), ...] in document order.
+    """
+    groups: list[tuple[str, list]] = []
+    current_section: str | None = None
+    current_els: list = []
+
+    for el in para_elements:
+        raw_label = _detect_bold_label(el)
+        new_section = None
+
+        if raw_label:
+            mapped = section_labels.get(raw_label)
+            if mapped:
+                if mapped in contact_related:
+                    mapped = "contacts"
+                new_section = mapped
+
+        if new_section and new_section != current_section:
+            if current_section is not None and current_els:
+                groups.append((current_section, current_els))
+            current_section = new_section
+            current_els = [el]
+        else:
+            current_els.append(el)
+
+    if current_section is not None and current_els:
+        groups.append((current_section, current_els))
+
+    return groups
+
+
+def _match_headers_to_uids(
+    paras, header_indices: list[int], uid_map: list[dict[str, str]],
+) -> list[tuple[int, str]]:
+    """Match .docx header paragraph indices to UIDs.
+
+    When counts match, uses positional matching (fast, deterministic).
+    When counts differ, falls back to text-similarity matching using
+    the header hints extracted from the HTML before Word COM stripped them.
+
+    Returns [(header_para_index, uid), ...] for matched pairs.
+    """
+    if len(header_indices) == len(uid_map):
+        return [(idx, entry["uid"]) for idx, entry in zip(header_indices, uid_map)]
+
+    logger.warning(
+        "SDT embedding: %d headers vs %d UIDs — using text matching",
+        len(header_indices), len(uid_map),
+    )
+
+    # Build lookup: header_hint_lower → uid (from HTML extraction)
+    remaining = list(uid_map)
+    matched: list[tuple[int, str]] = []
+
+    for idx in header_indices:
+        docx_header = (paras[idx].text or "").strip().lower()
+        best_entry = None
+        best_score = 0
+
+        for entry in remaining:
+            hint = entry["header"].lower()
+            if not hint:
+                continue
+            # Exact match
+            if docx_header == hint:
+                best_entry = entry
+                best_score = 3
+                break
+            # Substring match (one contains the other)
+            if hint in docx_header or docx_header in hint:
+                if best_score < 2:
+                    best_entry = entry
+                    best_score = 2
+            # Client + project name overlap (first 30 chars)
+            elif docx_header[:30] == hint[:30] and best_score < 1:
+                best_entry = entry
+                best_score = 1
+
+        if best_entry:
+            matched.append((idx, best_entry["uid"]))
+            remaining.remove(best_entry)
+        else:
+            logger.warning("SDT: no UID match for header at para %d: %s", idx, docx_header[:60])
+
+    if remaining:
+        logger.warning("SDT: %d UIDs unmatched: %s", len(remaining),
+                       [e["uid"] for e in remaining])
+
+    return matched
+
+
+def _embed_sdt_tags(doc, paras, uid_map: list[dict[str, str]]) -> None:
+    """Wrap project blocks and their sections in Word SDTs.
+
+    Each project block gets a project-level SDT with tag "bfa:project:uid=...".
+    Within each project, sections are wrapped with "bfa:section:..." tags.
+    SDTs are invisible in Word but survive editing and enable deterministic parsing.
+    """
+    from docx.oxml.ns import qn
+    from .pipeline.config import SECTION_LABELS
+    from .pipeline.importer import CONTACT_RELATED_SECTIONS
+
+    body = doc.element.body
+
+    # Find all project header indices
+    header_indices = []
+    for i, p in enumerate(paras):
+        t = (p.text or "").strip()
+        if _is_project_header(t):
+            header_indices.append(i)
+
+    if not header_indices:
+        logger.warning("SDT embedding: no project headers found")
+        return
+
+    # Match headers to UIDs (positional when counts match, text-similarity otherwise)
+    matched = _match_headers_to_uids(paras, header_indices, uid_map)
+    if not matched:
+        logger.warning("SDT embedding: no headers matched to UIDs — skipping")
+        return
+
+    # Build end-index lookup: header_idx → next header or end of doc
+    header_set = set(header_indices)
+    sorted_headers = sorted(header_set)
+
+    # Process in reverse to preserve element indices
+    for header_idx, uid in reversed(matched):
+        # Find end of this project block
+        pos_in_sorted = sorted_headers.index(header_idx)
+        end = sorted_headers[pos_in_sorted + 1] if pos_in_sorted + 1 < len(sorted_headers) else len(paras)
+
+        # Trim trailing blanks and ON HOLD separator from block
+        while end > header_idx + 1:
+            trailing_text = (paras[end - 1].text or "").strip()
+            if not trailing_text or "ON HOLD" in trailing_text:
+                end -= 1
+            else:
+                break
+
+        header_text = (paras[header_idx].text or "").strip()
+        block_els = [paras[i]._element for i in range(header_idx, end)]
+        if not block_els:
+            continue
+
+        # --- Project-level SDT ---
+        proj_sdt = _create_sdt(
+            f"bfa:project:uid={uid}",
+            alias=header_text[:80],
+        )
+        proj_content = proj_sdt.find(qn("w:sdtContent"))
+
+        first_pos = list(body).index(block_els[0])
+        for el in block_els:
+            proj_content.append(el)
+        body.insert(first_pos, proj_sdt)
+
+        # --- Section-level SDTs within project ---
+        inner_paras = list(proj_content.findall(qn("w:p")))
+        if len(inner_paras) < 2:
+            continue  # Just header, no body paragraphs
+
+        body_paras = inner_paras[1:]  # Skip header paragraph
+        section_groups = _group_paragraphs_by_section(
+            body_paras, SECTION_LABELS, CONTACT_RELATED_SECTIONS,
+        )
+
+        for sec_name, sec_elements in reversed(section_groups):
+            if sec_elements:
+                _wrap_in_sdt(proj_content, sec_elements, f"bfa:section:{sec_name}")
+
+    sdt_count = len(body.findall(f".//{qn('w:sdt')}"))
+    logger.info(
+        "Step 6.5 — embedded %d SDTs (%d of %d projects matched)",
+        sdt_count, len(matched), len(uid_map),
+    )
+
+
+# ---------------------------------------------------------------------------
 # Public API
 # ---------------------------------------------------------------------------
 
@@ -629,18 +934,22 @@ def render_todo_docx(
         )
 
     raw_html = pasteable_path.read_text(encoding="utf-8")
-    cleaned_html = _prepare_html_for_word(raw_html)
+    cleaned_html, uid_map = _prepare_html_for_word(raw_html)
 
     tmp_dir = tempfile.mkdtemp(prefix="bfa_docx_")
     tmp_html = Path(tmp_dir) / "todo_prepared.html"
     tmp_html.write_text(cleaned_html, encoding="utf-8")
 
     if output_path is None:
-        site_dir.mkdir(parents=True, exist_ok=True)
-        output_path = site_dir / "todo_list.docx"
+        from datetime import date
+        today = date.today().strftime("%Y_%m_%d")
+        filename = f"{today}_Ballard Fine Art To Do.docx"
+        out_dir = config.OUTPUT_DIR
+        out_dir.mkdir(parents=True, exist_ok=True)
+        output_path = out_dir / filename
 
     _html_to_docx_via_word(tmp_html, output_path)
-    _postprocess_docx(output_path)
+    _postprocess_docx(output_path, uid_map=uid_map)
 
     try:
         tmp_html.unlink()
@@ -648,7 +957,12 @@ def render_todo_docx(
     except Exception:
         pass
 
+    # Also produce PDF via Word COM
+    pdf_path = output_path.with_suffix(".docx.pdf")
+    _docx_to_pdf(output_path, pdf_path)
+
     logger.info("Rendered To Do .docx: %s (%d bytes)", output_path, output_path.stat().st_size)
+    logger.info("Rendered To Do .pdf: %s (%d bytes)", pdf_path, pdf_path.stat().st_size)
     return output_path
 
 

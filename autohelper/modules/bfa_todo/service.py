@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import re
 import shutil
 from datetime import datetime, timezone
 from pathlib import Path
@@ -109,6 +110,17 @@ def import_from_html_file(filepath: str) -> dict[str, Any]:
     from .pipeline.renderer import render_all
 
     _ensure_data_dir()
+
+    # Archive a versioned copy of the source HTML so it's never lost
+    from datetime import date
+    archive_dir = pipeline_config.DATA_DIR / "archive"
+    archive_dir.mkdir(parents=True, exist_ok=True)
+    today = date.today().strftime("%Y_%m_%d")
+    archive_path = archive_dir / f"{today}_gdocs_source.html"
+    shutil.copy2(str(src), str(archive_path))
+    # Also keep a stable "current" copy
+    shutil.copy2(str(src), str(pipeline_config.DATA_DIR / "current_list.html"))
+    logger.info("Archived source HTML: %s", archive_path)
 
     # Parse HTML → raw project blocks + gdocs CSS
     projects, gdocs_css = import_document(filepath)
@@ -446,173 +458,81 @@ def update_project_phase(uid: str, phase: str) -> dict[str, Any] | None:
     return project
 
 
-def _generate_preamble_lists() -> None:
-    """Regenerate the preamble-lists entry from Monday overview data.
+def suggest_preamble_updates() -> list[dict[str, Any]]:
+    """Compare project state against curated preamble-lists and return suggestions.
 
-    Categorizes projects by phase/state and renders as styled HTML matching
-    the existing GDocs formatting. Updates the DB entry in place.
+    Does NOT modify the DB.  Returns a list of suggestion dicts:
+      {"category": str, "project": str, "uid": str, "suggestion": str}
     """
     from collections import defaultdict
 
-    from autohelper.modules.bfa_todo.pipeline.repo import BfaProjectRepo
-    from autohelper.modules.contacts.hub import resolve_project_contact
-
-    repo = BfaProjectRepo()
-    entries = repo.get_all(include_archived=False)
+    entries = _project_repo.get_all(include_archived=False)
     projects = [e for e in entries if e.get("type") == "project"]
 
     if not projects:
-        logger.info("No BFA projects — skipping preamble-lists generation")
-        return
+        return []
 
-    # Categorize projects by phase and status
-    categories: dict[str, list[dict]] = defaultdict(list)
-    CATEGORY_ORDER = [
-        "Proposals (New Projects)",
-        "Art Plans to be drafted",
-        "Longlists",
-        "Proposals Pending (Sent)",
-        "Artist Contracts (To be drafted)",
-        "Artist Contracts (In Negotiation)",
-        "Final Documents and Installation",
-        "ON HOLD",
-    ]
+    # Load current preamble-lists text to check what's already mentioned
+    preamble_lists = _project_repo.get("e2adb95f-4ae7-5d77-916f-bb6b714e045a")
+    existing_text = ""
+    if preamble_lists:
+        existing_text = (
+            preamble_lists.get("sections", {}).get("content", {}).get("text", "")
+        ).lower()
+
+    PHASE_TO_CATEGORY = {
+        "1. Project Initiation": "Proposals (New Projects)",
+        "2. PPAP": "Art Plans to be drafted",
+        "3. DPAP": "Art Plans to be drafted",
+        "4.1. Artist Selection SP#1": "Longlists",
+        "4.2. Artist Selection SP#2": "Artist Contracts",
+        "5. Artist Contract": "Artist Contracts",
+        "9. 100% Fabrication/Install": "Final Documents and Installation",
+        "10. Final Documents": "Final Documents and Installation",
+    }
+
+    suggestions: list[dict[str, Any]] = []
 
     for p in projects:
         phase = p.get("bfa_phase_canonical") or "TBC"
         status = p.get("status", "active")
-        rec_id = p.get("project_record_id")
+        fields = p.get("fields", {})
+        name = fields.get("project_name", "") or fields.get("client", "")
 
-        # Resolve PM and selected artist from hub
-        pm_contact = resolve_project_contact(rec_id, "project_coordinator") if rec_id else None
-        artist_contact = resolve_project_contact(rec_id, "selected_artist") if rec_id else None
-        artist_name = artist_contact.full_name if artist_contact else ""
-
-        entry = {
-            "name": p.get("fields", {}).get("project_name", ""),
-            "client": p.get("fields", {}).get("client", ""),
-            "phase": phase,
-            "status": status,
-            "pm_name": pm_contact.full_name if pm_contact else "",
-            "artist": artist_name,
-            "install_date": p.get("fields", {}).get("install_date", ""),
-            "uid": p["uid"],
-        }
-
-        if status == "on_hold":
-            categories["ON HOLD"].append(entry)
-        elif phase in ("", "TBC", "1. Project Initiation"):
-            categories["Proposals (New Projects)"].append(entry)
-        elif phase in ("2. PPAP", "3. DPAP"):
-            categories["Art Plans to be drafted"].append(entry)
-        elif phase == "4.1. Artist Selection SP#1":
-            categories["Longlists"].append(entry)
-        elif phase in ("4.2. Artist Selection SP#2", "5. Artist Contract"):
-            if artist_name:
-                categories["Artist Contracts (In Negotiation)"].append(entry)
-            else:
-                categories["Artist Contracts (To be drafted)"].append(entry)
-        elif phase in ("9. 100% Fabrication/Install", "10. Final Documents"):
-            categories["Final Documents and Installation"].append(entry)
-        # phases 6-8 are active work — they appear as main project entries, not in preamble-lists
-
-    def _pm_initials(name: str) -> str:
         if not name:
-            return "?"
-        pms = [n.strip() for n in name.split(",") if n.strip()]
-        initials = []
-        for pm in pms:
-            parts = [w for w in pm.split() if w]
-            initials.append("".join(p[0] for p in parts).upper())
-        return "/".join(initials)
-
-    def _format_line(entry: dict, detail: str = "") -> str:
-        pm = _pm_initials(entry["pm_name"])
-        name = entry["name"] or entry["client"]
-        suffix = f" - {detail}" if detail else ""
-        return f"({pm}) {name}{suffix}"
-
-    # HTML patterns (from existing preamble-lists)
-    _P_BOLD = (
-        '<p class="c18 c22" style=\'margin:0; color:#000; font-size:10pt; '
-        'font-family:"Calibri"; padding-top:0; padding-bottom:0; '
-        'line-height:1.15 !important; text-align:left; orphans:2; widows:2\' align="left">'
-        '<span class="c16 c34 c20 c40" style=\'text-decoration-skip-ink:none; '
-        '-webkit-text-decoration-skip:none; color:#000; text-decoration:underline; '
-        'vertical-align:baseline; font-family:"Calibri"; font-style:normal; '
-        'font-size:10pt; font-weight:700\' valign="baseline">'
-    )
-    _P_NORMAL = (
-        '<p class="c21" style=\'margin:0; color:#000; font-size:10pt; '
-        'font-family:"Calibri"; padding-top:0; padding-bottom:0; '
-        'line-height:1.15 !important; text-align:left\' align="left">'
-        '<span>'
-    )
-
-    def _html_bold(text: str) -> str:
-        esc = text.replace("&", "&amp;").replace("<", "&lt;")
-        return f"{_P_BOLD}{esc}</span></p>"
-
-    def _html_normal(text: str) -> str:
-        esc = text.replace("&", "&amp;").replace("<", "&lt;")
-        return f"{_P_NORMAL}{esc}</span></p>"
-
-    text_lines: list[str] = []
-    html_lines: list[str] = []
-
-    for cat_name in CATEGORY_ORDER:
-        items = categories.get(cat_name, [])
-        if not items and cat_name not in ("Proposals (New Projects)", "ON HOLD"):
             continue
 
-        text_lines.append(cat_name)
-        html_lines.append(_html_bold(cat_name))
+        # Determine expected category
+        if status == "on_hold":
+            expected_cat = "ON HOLD"
+        elif phase in ("", "TBC"):
+            expected_cat = "Proposals (New Projects)"
+        else:
+            expected_cat = PHASE_TO_CATEGORY.get(phase)
 
-        for entry in sorted(items, key=lambda x: x["name"]):
-            if cat_name == "Art Plans to be drafted":
-                detail = entry["phase"].split(". ", 1)[-1] if ". " in entry["phase"] else ""
-                line = _format_line(entry, detail)
-            elif cat_name == "Longlists":
-                line = _format_line(entry, "EOI")
-            elif cat_name.startswith("Artist Contracts"):
-                artist = entry["artist"]
-                if artist and artist.lower() not in entry["name"].lower():
-                    line = _format_line(entry, artist)
-                else:
-                    line = _format_line(entry)
-            elif cat_name == "Final Documents and Installation":
-                line = _format_line(entry, entry.get("install_date") or "")
-            else:
-                line = _format_line(entry)
+        if not expected_cat:
+            # phases 6-8 are active work — no preamble-lists entry expected
+            continue
 
-            text_lines.append(line)
-            html_lines.append(_html_normal(line))
+        # Check if project name already appears in the curated text
+        if name.lower() in existing_text:
+            continue
 
-        # Blank line between categories
-        text_lines.append("")
-        html_lines.append('<p class="c21" style=\'margin:0\'><span></span></p>')
+        suggestions.append({
+            "category": expected_cat,
+            "project": name,
+            "uid": p["uid"],
+            "phase": phase,
+            "suggestion": f"{name} is in {phase} — consider adding to {expected_cat}",
+        })
 
-    # Also append any manual_entries from the existing preamble-lists
-    preamble_lists = _project_repo.get("e2adb95f-4ae7-5d77-916f-bb6b714e045a")
-    if preamble_lists:
-        manual = preamble_lists.get("fields", {}).get("manual_entries", [])
-        if manual:
-            text_lines.append("Other")
-            html_lines.append(_html_bold("Other"))
-            for entry in manual:
-                text_lines.append(entry)
-                html_lines.append(_html_normal(entry))
-
-    # Update the preamble-lists entry
-    if preamble_lists:
-        preamble_lists["sections"]["content"]["text"] = "\n".join(text_lines)
-        preamble_lists["sections"]["content"]["html"] = "\n".join(html_lines)
-        _project_repo.upsert(preamble_lists)
+    if suggestions:
         logger.info(
-            "Generated preamble-lists: %d lines across %d categories",
-            len(text_lines),
-            sum(1 for c in CATEGORY_ORDER if categories.get(c)),
+            "Preamble-lists suggestions: %d projects not yet listed",
+            len(suggestions),
         )
+
+    return suggestions
 
 
 def render_pipeline() -> dict[str, Any]:
@@ -621,11 +541,17 @@ def render_pipeline() -> dict[str, Any]:
 
     _ensure_seeded()
 
-    # Regenerate preamble-lists from Monday overview
+    # Surface suggestions for preamble-lists (read-only — curated content is never overwritten)
     try:
-        _generate_preamble_lists()
+        suggestions = suggest_preamble_updates()
+        if suggestions:
+            logger.info(
+                "Preamble-lists has %d suggested additions (not applied — content is curated)",
+                len(suggestions),
+            )
     except Exception as e:
-        logger.warning("Preamble-lists generation failed: %s", e)
+        logger.warning("Preamble-lists suggestion check failed: %s", e)
+        suggestions = []
 
     projects = _project_repo.get_all(include_archived=False)
     if not projects:
@@ -646,6 +572,7 @@ def render_pipeline() -> dict[str, Any]:
             "json": json_path,
             "gdocs": gdocs_path,
         },
+        "preamble_suggestions": suggestions,
     }
 
 
