@@ -503,6 +503,12 @@ def _postprocess_docx(docx_path: Path, uid_map: list[dict[str, str]] | None = No
     # All XML mutations are done.  Save, then reopen to get a clean
     # paragraph list with proper python-docx wrappers.
 
+    # Remove web view setting (Word COM sets this from HTML; forces Print Layout)
+    settings = doc.settings.element
+    view_el = settings.find(qn("w:view"))
+    if view_el is not None:
+        settings.remove(view_el)
+
     doc.save(str(docx_path))
     doc = Document(str(docx_path))
     paras = doc.paragraphs
