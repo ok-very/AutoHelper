@@ -1,12 +1,12 @@
 """
-Bidirectional adapter: .docx ↔ DB dict ↔ ClickUp.
+Bidirectional adapter: .docx <-> DB dict <-> ClickUp.
 
 Owns the field mapping in both directions so the BFA To Do list can
 round-trip through Word edits without data loss.
 
-    docx_to_projects(path)  — parse .docx back to project dicts
-    diff_projects(parsed, db) — field + section level diff
-    project_to_clickup(entry, record) — map to ClickUp update payload
+    docx_to_projects(path)  -- parse .docx back to project dicts (via SDTs)
+    diff_projects(parsed, db) -- field + section level diff
+    project_to_clickup(entry, record) -- map to ClickUp update payload
 """
 
 from __future__ import annotations
@@ -22,214 +22,140 @@ logger = logging.getLogger(__name__)
 
 
 # ---------------------------------------------------------------------------
-# .docx → project dicts
+# .docx -> project dicts (SDT-based extraction)
 # ---------------------------------------------------------------------------
 
 def docx_to_projects(docx_path: str | Path) -> list[dict[str, Any]]:
-    """Parse a BFA To Do .docx into a list of project dicts.
+    """Parse a BFA To Do .docx into project dicts via SDT content controls.
+
+    Each project block is wrapped in a w:sdt with tag "bfa:project:uid=..."
+    and sections within are wrapped with "bfa:section:..." tags.
+    These SDTs are embedded at generation time by docx_renderer.py.
 
     Returns dicts shaped like the DB schema:
-        {fields, header: {text}, sections: {name: {text}}}
-
-    Reuses _parse_header_fields from the HTML importer for header extraction
-    and SECTION_LABELS / CONTACT_RELATED_SECTIONS for body classification.
+        {uid, fields, header: {text}, sections: {name: {text}}}
     """
     from docx import Document
-
-    from .pipeline.importer import (
-        CONTACT_RELATED_SECTIONS,
-        _parse_header_fields,
-    )
-    from .pipeline.config import SECTION_LABELS
+    from docx.oxml.ns import qn
+    from .pipeline.importer import _parse_header_fields
 
     doc = Document(str(docx_path))
-    paras = doc.paragraphs
+    body = doc.element.body
 
-    # -- Phase 1: Split paragraphs into project blocks --
-    blocks: list[dict[str, Any]] = []
-    current_header_idx: int | None = None
-
-    for i, p in enumerate(paras):
-        text = (p.text or "").strip()
-        style = p.style.name if p.style else ""
-
-        if _is_project_header(text, style):
-            if current_header_idx is not None:
-                blocks.append(_collect_block(paras, current_header_idx, i))
-            current_header_idx = i
-
-    # Last block
-    if current_header_idx is not None:
-        blocks.append(_collect_block(paras, current_header_idx, len(paras)))
-
-    logger.info("Parsed %d project blocks from %s", len(blocks), Path(docx_path).name)
-
-    # -- Phase 2: Extract fields + sections from each block --
     projects: list[dict[str, Any]] = []
 
-    for block in blocks:
-        header_text = block["header_text"]
+    for sdt in body.findall(qn("w:sdt")):
+        sdt_pr = sdt.find(qn("w:sdtPr"))
+        if sdt_pr is None:
+            continue
+        tag_el = sdt_pr.find(qn("w:tag"))
+        if tag_el is None:
+            continue
+        tag_val = tag_el.get(qn("w:val"), "")
+        if not tag_val.startswith("bfa:project:"):
+            continue
+
+        # Extract UID from tag
+        uid = tag_val.split("uid=", 1)[1] if "uid=" in tag_val else ""
+
+        # Alias = header text fallback
+        alias_el = sdt_pr.find(qn("w:alias"))
+        alias_text = alias_el.get(qn("w:val"), "") if alias_el is not None else ""
+
+        content = sdt.find(qn("w:sdtContent"))
+        if content is None:
+            continue
+
+        # Walk direct children: first w:p is header, w:sdt children are
+        # sections, remaining w:p children are unmapped notes.
+        header_text = alias_text
+        sections: dict[str, dict[str, str]] = {}
+        unmapped_lines: list[str] = []
+        first_para_seen = False
+
+        for child in content:
+            if child.tag == qn("w:p"):
+                if not first_para_seen:
+                    first_para_seen = True
+                    para_text = _sdt_para_text(child)
+                    if para_text:
+                        header_text = para_text
+                else:
+                    text = _sdt_para_text(child)
+                    if text:
+                        unmapped_lines.append(text)
+
+            elif child.tag == qn("w:sdt"):
+                # Section-level SDT
+                inner_pr = child.find(qn("w:sdtPr"))
+                if inner_pr is None:
+                    continue
+                inner_tag = inner_pr.find(qn("w:tag"))
+                if inner_tag is None:
+                    continue
+                inner_val = inner_tag.get(qn("w:val"), "")
+                if not inner_val.startswith("bfa:section:"):
+                    continue
+
+                sec_name = inner_val[len("bfa:section:"):]
+                inner_content = child.find(qn("w:sdtContent"))
+                if inner_content is None:
+                    continue
+
+                sec_text = _sdt_content_text(inner_content)
+                if sec_name in sections:
+                    sections[sec_name]["text"] += "\n" + sec_text
+                else:
+                    sections[sec_name] = {"text": sec_text}
+
+        if unmapped_lines:
+            unmapped_text = "\n".join(unmapped_lines)
+            if "unmapped" in sections:
+                sections["unmapped"]["text"] += "\n" + unmapped_text
+            else:
+                sections["unmapped"] = {"text": unmapped_text}
+
         fields = _parse_header_fields(header_text)
 
-        sections = _classify_docx_sections(
-            block["body_paras"], SECTION_LABELS, CONTACT_RELATED_SECTIONS,
-        )
-
         projects.append({
+            "uid": uid,
             "fields": fields,
             "header": {"text": header_text},
             "sections": sections,
         })
 
+    if not projects:
+        logger.warning("No SDT-tagged projects found in %s", Path(docx_path).name)
+    else:
+        logger.info(
+            "Parsed %d SDT-tagged projects from %s",
+            len(projects), Path(docx_path).name,
+        )
+
     return projects
 
 
-def _is_project_header(text: str, style_name: str) -> bool:
-    """Detect a project header paragraph."""
-    if not text.startswith("("):
-        return False
-    if ":" not in text:
-        return False
-    # Must have budget or install info, OR be Heading 3 style
-    has_keywords = any(kw in text for kw in ("Artwork", "Total", "Install"))
-    is_heading = "Heading" in style_name
-    return has_keywords or (is_heading and len(text) > 30)
+def _sdt_para_text(para_el) -> str:
+    """Get text from a paragraph element by joining w:t texts."""
+    from docx.oxml.ns import qn
+
+    texts = []
+    for t in para_el.iter(qn("w:t")):
+        if t.text:
+            texts.append(t.text)
+    return "".join(texts).strip()
 
 
-def _collect_block(
-    paras: list, start: int, end: int,
-) -> dict[str, Any]:
-    """Collect a project block from start (header) to end (next header)."""
-    header_text = (paras[start].text or "").strip()
+def _sdt_content_text(content_el) -> str:
+    """Get all text from an sdtContent element, joining paragraphs."""
+    from docx.oxml.ns import qn
 
-    # Body paragraphs: everything after header, skip trailing blanks
-    body = []
-    for i in range(start + 1, end):
-        text = (paras[i].text or "").strip()
-        runs_info = _extract_runs(paras[i])
-        body.append({"text": text, "runs": runs_info, "index": i})
-
-    # Trim trailing blanks
-    while body and not body[-1]["text"]:
-        body.pop()
-
-    return {"header_text": header_text, "body_paras": body}
-
-
-def _extract_runs(para) -> list[dict[str, Any]]:
-    """Extract run-level info (text + bold) from a paragraph."""
-    runs = []
-    for r in para.runs:
-        runs.append({
-            "text": r.text,
-            "bold": r.font.bold is True,
-        })
-    return runs
-
-
-def _classify_docx_sections(
-    body_paras: list[dict],
-    section_labels: dict[str, str],
-    contact_related: set[str],
-) -> dict[str, dict[str, str]]:
-    """Classify body paragraphs into named sections by bold label detection.
-
-    Mirrors pipeline/importer.py:_classify_sections but works on
-    extracted paragraph dicts instead of lxml elements.
-    """
-    sections: dict[str, dict[str, str]] = {}
-    current_section: str | None = None
-    current_text: list[str] = []
-
-    def _flush():
-        nonlocal current_section, current_text
-        if current_section and current_text:
-            store_as = current_section
-            if store_as in contact_related:
-                store_as = "contacts"
-            text = "\n".join(current_text)
-            if store_as in sections:
-                sections[store_as]["text"] += "\n" + text
-            else:
-                sections[store_as] = {"text": text}
-        elif current_text:
-            text = "\n".join(current_text)
-            if "unmapped" not in sections:
-                sections["unmapped"] = {"text": ""}
-            sections["unmapped"]["text"] += "\n" + text
-        current_text = []
-
-    for para in body_paras:
-        text = para["text"]
-        if not text:
-            continue
-
-        # Detect section label from bold prefix ONLY.
-        # Text-based fallback is too greedy (e.g. "Artist 'Kick off'..." matches
-        # "artist" → artists section). The original HTML importer also uses bold
-        # detection as the primary mechanism.
-        label = _detect_label_from_runs(para["runs"], section_labels)
-
-        if label:
-            _flush()
-            current_section = label
-
-        current_text.append(text)
-
-    _flush()
-
-    # Clean up
-    for sec in sections.values():
-        sec["text"] = sec["text"].strip()
-
-    # Strip leading label prefixes from section text.
-    # DB stores "Duncan Wade, ..." but .docx has "Contact: Duncan Wade, ..."
-    # Normalize so diffs don't flag every section as changed.
-    _LABEL_PREFIX_RE = re.compile(
-        r"^(?:Contact|Owner|Architect|Landscape|PPAP|DPAP|EOI|SP#[12]|AO|"
-        r"Selection Panel|Community Advisor[sy]?|Shortlisted Artists|Selected Artist|"
-        r"Artwork Title|Project Status|BFA Project Status|Next Steps|BFA Next Steps|"
-        r"Fabricat(?:or|ors?|ion)\s*(?:\d+%)?|"
-        r"(?:\d+%\s*)?Fabrication|"
-        r"Review of art before delivery|Checklist|NVPAAC Rep|"
-        r"Installation|Storage|Final Report)\s*:?\s*",
-        re.IGNORECASE | re.MULTILINE,
-    )
-    for sec in sections.values():
-        sec["text"] = _LABEL_PREFIX_RE.sub("", sec["text"]).strip()
-
-    return sections
-
-
-def _detect_label_from_runs(
-    runs: list[dict], section_labels: dict[str, str],
-) -> str | None:
-    """Detect a section label from the first bold run."""
-    if not runs:
-        return None
-    first = runs[0]
-    if not first["bold"]:
-        return None
-    label_text = first["text"].lower().rstrip(":").strip()
-    return section_labels.get(label_text)
-
-
-def _detect_label_from_text(
-    text: str, section_labels: dict[str, str],
-) -> str | None:
-    """Detect a section label from the paragraph text prefix."""
-    clean = text.lower().rstrip(":").strip()
-    # Check exact match
-    if clean in section_labels:
-        return section_labels[clean]
-    # Check prefix match
-    sorted_keys = sorted(section_labels.keys(), key=len, reverse=True)
-    for key in sorted_keys:
-        if clean.startswith(key):
-            after = clean[len(key):]
-            if after and after[0] in (":", " ", "\t"):
-                return section_labels[key]
-    return None
+    lines = []
+    for p in content_el.findall(qn("w:p")):
+        lines.append(_sdt_para_text(p))
+    while lines and not lines[-1]:
+        lines.pop()
+    return "\n".join(lines)
 
 
 # ---------------------------------------------------------------------------
@@ -253,19 +179,29 @@ def diff_projects(
 ) -> list[Delta]:
     """Compare parsed .docx projects against DB entries.
 
-    Matches by header text similarity.  Returns a list of Deltas
-    for fields and sections that differ.
+    Matches by UID (from SDT tags) first, then falls back to header
+    text similarity.  Returns a list of Deltas for differences.
     """
     deltas: list[Delta] = []
+    db_by_uid = {
+        e.get("uid", ""): e
+        for e in db_entries
+        if e.get("type") == "project"
+    }
 
     for docx_proj in parsed:
+        docx_uid = docx_proj.get("uid", "")
         docx_header = docx_proj["header"]["text"]
-        db_entry = _match_db_entry(docx_header, db_entries)
+
+        # Match by UID first (deterministic), fall back to header text
+        db_entry = db_by_uid.get(docx_uid) if docx_uid else None
         if db_entry is None:
-            logger.debug("No DB match for: %s", docx_header[:80])
+            db_entry = _match_db_entry(docx_header, db_entries)
+        if db_entry is None:
+            logger.debug("No DB match for: %s (uid=%s)", docx_header[:80], docx_uid)
             continue
 
-        uid = db_entry.get("uid", "")
+        uid = db_entry.get("uid", docx_uid)
         db_fields = db_entry.get("fields", {})
         docx_fields = docx_proj.get("fields", {})
 
@@ -298,7 +234,7 @@ def diff_projects(
 def _match_db_entry(
     header_text: str, db_entries: list[dict[str, Any]],
 ) -> dict[str, Any] | None:
-    """Match a parsed header to a DB entry by text similarity."""
+    """Match a parsed header to a DB entry by text similarity (fallback)."""
     header_lower = header_text.lower()
 
     for entry in db_entries:
@@ -374,7 +310,7 @@ def _normalize_for_diff(val: str) -> str:
 
 
 # ---------------------------------------------------------------------------
-# DB dict → ClickUp update
+# DB dict -> ClickUp update
 # ---------------------------------------------------------------------------
 
 def project_to_clickup_updates(

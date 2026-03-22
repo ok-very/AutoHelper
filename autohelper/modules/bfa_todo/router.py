@@ -311,3 +311,46 @@ async def sync_clickup_stages() -> dict[str, Any]:
     except Exception as e:
         logger.error("Stage sync failed: %s", e, exc_info=True)
         raise HTTPException(500, f"Stage sync failed: {e}")
+
+
+@router.post("/backfeed/{uid}")
+async def backfeed(uid: str) -> dict[str, Any]:
+    """Push BFA entry data up to ProjectRecord and verify hub contacts.
+
+    Updates budget, install_date on the ProjectRecord.
+    Searches hub for contact matches. Stages ClickUp field push.
+    """
+    from .clickup_sync import backfeed_to_project_record
+    try:
+        return backfeed_to_project_record(uid)
+    except Exception as e:
+        logger.error("Backfeed failed for %s: %s", uid, e, exc_info=True)
+        raise HTTPException(500, f"Backfeed failed: {e}")
+
+
+@router.post("/push-contacts-to-clickup/{project_record_id}")
+async def push_contacts_to_clickup_endpoint(project_record_id: str) -> dict[str, Any]:
+    """Push project-contact associations to ClickUp custom fields.
+
+    Creates fields on the list if they don't exist (graceful on plan limit).
+    """
+    from .clickup_sync import push_contacts_to_clickup
+    try:
+        return await push_contacts_to_clickup(project_record_id)
+    except Exception as e:
+        logger.error("ClickUp contact push failed: %s", e, exc_info=True)
+        raise HTTPException(500, f"Push failed: {e}")
+
+
+@router.post("/enrich-from-hub/{uid}")
+async def enrich_from_hub(uid: str) -> dict[str, Any]:
+    """Populate TBC fields on a BFA entry from the contacts hub.
+
+    Resolves developer contacts by company name search.
+    """
+    from .clickup_sync import enrich_entry_from_hub
+    try:
+        return enrich_entry_from_hub(uid)
+    except Exception as e:
+        logger.error("Enrich failed for %s: %s", uid, e, exc_info=True)
+        raise HTTPException(500, f"Enrich failed: {e}")

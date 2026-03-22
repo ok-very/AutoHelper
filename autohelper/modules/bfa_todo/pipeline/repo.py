@@ -36,6 +36,7 @@ def _project_to_row(p: dict[str, Any]) -> dict[str, Any]:
         "type": p.get("type", "project"),
         "status": p.get("status", "active"),
         "source": p.get("source"),
+        "project_record_id": p.get("project_record_id"),
         "fields_json": json.dumps(fields, ensure_ascii=False),
         "header_text": header.get("text"),
         "header_html": header.get("html"),
@@ -75,6 +76,7 @@ def _row_to_project(row: Any, sections: list[Any]) -> dict[str, Any]:
         "type": row["type"],
         "status": row["status"],
         "source": row["source"],
+        "project_record_id": row["project_record_id"] if "project_record_id" in row.keys() else None,
         "fields": fields,
         "header": header,
         "sections": secs,
@@ -162,14 +164,16 @@ class BfaProjectRepo:
 
         db.execute("""
             INSERT INTO bfa_projects (uid, slug, fingerprint, type, status, source,
-                fields_json, header_text, header_html, phase_display, phase_canonical,
-                next_steps_json, updated_at)
+                project_record_id, fields_json, header_text, header_html,
+                phase_display, phase_canonical, next_steps_json, updated_at)
             VALUES (:uid, :slug, :fingerprint, :type, :status, :source,
-                :fields_json, :header_text, :header_html, :phase_display, :phase_canonical,
-                :next_steps_json, :updated_at)
+                :project_record_id, :fields_json, :header_text, :header_html,
+                :phase_display, :phase_canonical, :next_steps_json, :updated_at)
             ON CONFLICT(uid) DO UPDATE SET
                 slug=excluded.slug, fingerprint=excluded.fingerprint, type=excluded.type,
-                status=excluded.status, source=excluded.source, fields_json=excluded.fields_json,
+                status=excluded.status, source=excluded.source,
+                project_record_id=COALESCE(excluded.project_record_id, bfa_projects.project_record_id),
+                fields_json=excluded.fields_json,
                 header_text=excluded.header_text, header_html=excluded.header_html,
                 phase_display=excluded.phase_display, phase_canonical=excluded.phase_canonical,
                 next_steps_json=excluded.next_steps_json, updated_at=excluded.updated_at
@@ -195,14 +199,16 @@ class BfaProjectRepo:
                 uid = row["uid"]
                 db.execute("""
                     INSERT INTO bfa_projects (uid, slug, fingerprint, type, status, source,
-                        fields_json, header_text, header_html, phase_display, phase_canonical,
-                        next_steps_json, updated_at)
+                        project_record_id, fields_json, header_text, header_html,
+                        phase_display, phase_canonical, next_steps_json, updated_at)
                     VALUES (:uid, :slug, :fingerprint, :type, :status, :source,
-                        :fields_json, :header_text, :header_html, :phase_display, :phase_canonical,
-                        :next_steps_json, :updated_at)
+                        :project_record_id, :fields_json, :header_text, :header_html,
+                        :phase_display, :phase_canonical, :next_steps_json, :updated_at)
                     ON CONFLICT(uid) DO UPDATE SET
                         slug=excluded.slug, fingerprint=excluded.fingerprint, type=excluded.type,
-                        status=excluded.status, source=excluded.source, fields_json=excluded.fields_json,
+                        status=excluded.status, source=excluded.source,
+                        project_record_id=COALESCE(excluded.project_record_id, bfa_projects.project_record_id),
+                        fields_json=excluded.fields_json,
                         header_text=excluded.header_text, header_html=excluded.header_html,
                         phase_display=excluded.phase_display, phase_canonical=excluded.phase_canonical,
                         next_steps_json=excluded.next_steps_json, updated_at=excluded.updated_at
