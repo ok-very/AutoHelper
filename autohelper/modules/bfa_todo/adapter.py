@@ -67,10 +67,11 @@ def docx_to_projects(docx_path: str | Path) -> list[dict[str, Any]]:
             continue
 
         # Walk direct children: first w:p is header, w:sdt children are
-        # sections, remaining w:p children are unmapped notes.
+        # sections, loose w:p children are classified by text prefix
+        # (fallback when SDT section tags are missing or stripped).
         header_text = alias_text
         sections: dict[str, dict[str, str]] = {}
-        unmapped_lines: list[str] = []
+        loose_lines: list[str] = []
         first_para_seen = False
 
         for child in content:
@@ -83,7 +84,7 @@ def docx_to_projects(docx_path: str | Path) -> list[dict[str, Any]]:
                 else:
                     text = _sdt_para_text(child)
                     if text:
-                        unmapped_lines.append(text)
+                        loose_lines.append(text)
 
             elif child.tag == qn("w:sdt"):
                 # Section-level SDT
@@ -108,12 +109,9 @@ def docx_to_projects(docx_path: str | Path) -> list[dict[str, Any]]:
                 else:
                     sections[sec_name] = {"text": sec_text}
 
-        if unmapped_lines:
-            unmapped_text = "\n".join(unmapped_lines)
-            if "unmapped" in sections:
-                sections["unmapped"]["text"] += "\n" + unmapped_text
-            else:
-                sections["unmapped"] = {"text": unmapped_text}
+        # Classify loose paragraphs by text prefix (labels-in-content)
+        if loose_lines:
+            _classify_loose_lines(loose_lines, sections)
 
         fields = _parse_header_fields(header_text)
 
@@ -133,6 +131,45 @@ def docx_to_projects(docx_path: str | Path) -> list[dict[str, Any]]:
         )
 
     return projects
+
+
+def _classify_loose_lines(
+    lines: list[str], sections: dict[str, dict[str, str]],
+) -> None:
+    """Classify loose paragraph lines by text-prefix into sections.
+
+    Uses the same SECTION_LABELS + CONTACT_RELATED_SECTIONS as the rest
+    of the pipeline. Lines that don't match any label go to "unmapped".
+    """
+    from .pipeline.config import SECTION_LABELS
+    from .pipeline.importer import CONTACT_RELATED_SECTIONS
+
+    # Sort labels longest-first for greedy matching
+    sorted_labels = sorted(SECTION_LABELS.items(), key=lambda x: -len(x[0]))
+
+    current_section = "unmapped"
+
+    for line in lines:
+        lower = line.lower()
+
+        # Try to detect a section label
+        matched_section = None
+        for label, mapped in sorted_labels:
+            if lower.startswith(label):
+                after = lower[len(label):len(label) + 2]
+                if not after or after[0] in (":", " ", "\t", "\xa0"):
+                    matched_section = mapped
+                    break
+
+        if matched_section:
+            if matched_section in CONTACT_RELATED_SECTIONS:
+                matched_section = "contacts"
+            current_section = matched_section
+
+        if current_section in sections:
+            sections[current_section]["text"] += "\n" + line
+        else:
+            sections[current_section] = {"text": line}
 
 
 def _sdt_para_text(para_el) -> str:

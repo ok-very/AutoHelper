@@ -704,33 +704,41 @@ def _wrap_in_sdt(parent, elements: list, tag_val: str, alias: str | None = None)
     parent.insert(first_idx, sdt)
 
 
-def _detect_bold_label(para_el) -> str | None:
-    """Detect a bold section label from the first text-bearing run.
-
-    Returns the lowercase label text (without trailing colon) or None.
-    Only checks the first run with text — if it's not bold, returns None.
-    """
+def _para_text(para_el) -> str:
+    """Get full text from a paragraph element."""
     from docx.oxml.ns import qn
+    return "".join(
+        (t.text or "") for t in para_el.iter(qn("w:t"))
+    ).strip()
 
-    for r in para_el.findall(qn("w:r")):
-        rPr = r.find(qn("w:rPr"))
-        is_bold = False
-        if rPr is not None:
-            b = rPr.find(qn("w:b"))
-            if b is not None:
-                val = b.get(qn("w:val"))
-                is_bold = val is None or val not in ("0", "false")
 
-        t_el = r.find(qn("w:t"))
-        text = (t_el.text or "").strip() if t_el is not None else ""
-        if not text:
-            continue
+def _detect_section_label(
+    para_el, section_labels: dict[str, str],
+) -> str | None:
+    """Detect a section label from paragraph text using prefix matching.
 
-        if not is_bold:
-            return None  # First text-bearing run is not bold — no label
-        return text.lower().rstrip(":").strip()
+    Matches the start of paragraph text against SECTION_LABELS keys
+    (longest match first). Format-independent — works whether the label
+    is bold, plain, or inline.
 
-    return None
+    Returns the mapped section name or None.
+    """
+    text = _para_text(para_el).lower()
+    if not text:
+        return None
+
+    # Longest-prefix match against section_labels keys
+    best_match: str | None = None
+    best_len = 0
+    for label, mapped in section_labels.items():
+        if text.startswith(label) and len(label) > best_len:
+            # Verify it's actually a label (followed by : or whitespace or end)
+            after = text[len(label):len(label) + 2]
+            if not after or after[0] in (":", " ", "\t", "\xa0"):
+                best_match = mapped
+                best_len = len(label)
+
+    return best_match
 
 
 def _group_paragraphs_by_section(
@@ -740,7 +748,10 @@ def _group_paragraphs_by_section(
 ) -> list[tuple[str, list]]:
     """Group paragraph elements by detected section label.
 
-    Uses bold-label detection (reliable since we generated the labels).
+    Uses text-prefix matching against SECTION_LABELS — format-independent,
+    works with PM-authored labels-in-content (Contact:, Owner:, Architect:, etc.)
+    regardless of bold/plain formatting.
+
     Folds contact-related sub-sections (architect, ppap, etc.) into "contacts".
 
     Returns [(section_name, [elements]), ...] in document order.
@@ -750,20 +761,15 @@ def _group_paragraphs_by_section(
     current_els: list = []
 
     for el in para_elements:
-        raw_label = _detect_bold_label(el)
-        new_section = None
+        mapped = _detect_section_label(el, section_labels)
 
-        if raw_label:
-            mapped = section_labels.get(raw_label)
-            if mapped:
-                if mapped in contact_related:
-                    mapped = "contacts"
-                new_section = mapped
+        if mapped and mapped in contact_related:
+            mapped = "contacts"
 
-        if new_section and new_section != current_section:
+        if mapped and mapped != current_section:
             if current_section is not None and current_els:
                 groups.append((current_section, current_els))
-            current_section = new_section
+            current_section = mapped
             current_els = [el]
         else:
             current_els.append(el)
