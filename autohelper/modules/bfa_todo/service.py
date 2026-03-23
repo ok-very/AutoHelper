@@ -611,8 +611,13 @@ def refresh_dynamic_preamble_dates() -> int:
 
     for i, line in enumerate(lines):
         # Title line: "Ballard Fine Art - To Do List <date>"
+        # Date is always the next Monday (generated Fridays, delivered Mondays)
         if line.startswith("Ballard Fine Art - To Do List"):
-            lines[i] = f"Ballard Fine Art - To Do List {today.strftime('%B')} {today.day}, {today.year}"
+            days_until_monday = (7 - today.weekday()) % 7
+            if days_until_monday == 0:
+                days_until_monday = 7  # if today is Monday, use next Monday
+            monday = today + timedelta(days=days_until_monday)
+            lines[i] = f"Ballard Fine Art - To Do List {monday.strftime('%B')} {monday.day}, {monday.year}"
             updated += 1
 
         # Richmond: 2nd Tuesday
