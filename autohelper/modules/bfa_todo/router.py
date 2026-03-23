@@ -11,6 +11,7 @@ from pydantic import BaseModel
 from autohelper.shared.logging import get_logger
 
 from . import service
+from .pipeline.repo import CuratedContentError
 
 logger = get_logger(__name__)
 
@@ -116,7 +117,10 @@ async def update_project(uid: str, req: UpdateProjectRequest) -> dict[str, Any]:
     changes = {k: v for k, v in req.model_dump().items() if v is not None}
     if not changes:
         raise HTTPException(400, "No changes provided")
-    result = service.update_project(uid, changes)
+    try:
+        result = service.update_project(uid, changes)
+    except CuratedContentError:
+        raise HTTPException(409, f"Entry {uid} is curated and cannot be overwritten")
     if result is None:
         raise HTTPException(404, f"Project {uid} not found")
     return result
@@ -133,7 +137,10 @@ async def update_sections(uid: str, req: UpdateSectionsRequest) -> dict[str, Any
     """Save contenteditable section edits back to YAML."""
     if not req.sections and req.header is None:
         raise HTTPException(400, "No changes provided")
-    result = service.update_project_sections(uid, req.sections, req.header)
+    try:
+        result = service.update_project_sections(uid, req.sections, req.header)
+    except CuratedContentError:
+        raise HTTPException(409, f"Entry {uid} is curated and cannot be overwritten")
     if result is None:
         raise HTTPException(404, f"Project {uid} not found")
     return result
@@ -161,7 +168,10 @@ class UpdatePhaseRequest(BaseModel):
 @router.put("/projects/{uid}/phase")
 async def update_phase(uid: str, req: UpdatePhaseRequest) -> dict[str, Any]:
     """Update project phase via dropdown selection."""
-    result = service.update_project_phase(uid, req.phase)
+    try:
+        result = service.update_project_phase(uid, req.phase)
+    except CuratedContentError:
+        raise HTTPException(409, f"Entry {uid} is curated and cannot be overwritten")
     if result is None:
         raise HTTPException(404, f"Project {uid} not found")
     return result
@@ -283,6 +293,8 @@ async def apply_deltas(deltas: list[dict[str, Any]]) -> dict[str, Any]:
     from .service import apply_docx_deltas
     try:
         return apply_docx_deltas(deltas)
+    except CuratedContentError as e:
+        raise HTTPException(409, str(e))
     except Exception as e:
         logger.error("Delta apply failed: %s", e, exc_info=True)
         raise HTTPException(500, f"Apply failed: {e}")

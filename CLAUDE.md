@@ -59,6 +59,28 @@ Local desktop service for public art project management. Python FastAPI backend 
 - "Left-aligned everything"
 - "No color for decoration alone"
 
+## Data Ownership Model
+
+Every data record in AutoHelper has an ownership class. **Before writing any code that mutates data, identify the class and respect it.**
+
+| Class | Authority | Overwritable? | Flag |
+|-------|-----------|---------------|------|
+| **input** | External system (ClickUp, Excel, user form) | Yes, by re-sync | `ownership` absent or `"input"` |
+| **curated** | Human-edited, imported from authoritative source (e.g. Google Docs preambles) | NO — only by explicit re-import from authority | `fields["ownership"] = "curated"` |
+| **generated** | System pipeline output (rendered HTML, .docx, GDocs payloads) | Yes, always safe to regenerate | Not stored in DB — these are filesystem artifacts |
+
+### Enforcement
+- `CuratedContentError` in `pipeline/repo.py` — raised when `upsert()` or `update_section()` would overwrite a curated entry without `allow_curated=True`
+- `upsert_batch()` silently skips curated entries (logs warning) to avoid breaking batch operations
+- Router returns **409 Conflict** when curated guard fires
+
+### Checklist for new data flows
+1. Trace the path: source → transform → persist → render
+2. Label each stage's ownership class
+3. If a new record type lacks an ownership flag, add one
+4. Every write boundary must check ownership before mutating
+5. Only the authoritative source path passes `allow_curated=True`
+
 ## Module Layout
 
 - `modules/felt/` — Felt interactive map API

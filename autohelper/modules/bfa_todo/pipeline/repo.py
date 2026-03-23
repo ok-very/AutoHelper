@@ -13,6 +13,14 @@ from typing import Any
 
 from autohelper.db.conn import get_db
 
+import logging
+
+logger = logging.getLogger(__name__)
+
+
+class CuratedContentError(Exception):
+    """Raised when an operation would overwrite curated content without explicit opt-in."""
+
 
 def _now() -> str:
     return datetime.now(timezone.utc).isoformat()
@@ -157,10 +165,30 @@ class BfaProjectRepo:
             sec_by_uid.setdefault(s["project_uid"], []).append(s)
         return [_row_to_project(r, sec_by_uid.get(r["uid"], [])) for r in rows]
 
-    def upsert(self, project: dict[str, Any]) -> None:
+    def _check_curated(self, uid: str, db=None) -> bool:
+        """Return True if the existing entry with this UID has ownership=curated."""
+        db = db or get_db()
+        row = db.execute(
+            "SELECT fields_json FROM bfa_projects WHERE uid = ?", (uid,)
+        ).fetchone()
+        if not row or not row["fields_json"]:
+            return False
+        try:
+            fields = json.loads(row["fields_json"])
+            return fields.get("ownership") == "curated"
+        except (json.JSONDecodeError, TypeError):
+            return False
+
+    def upsert(self, project: dict[str, Any], *, allow_curated: bool = False) -> None:
         db = get_db()
         row = _project_to_row(project)
         uid = row["uid"]
+
+        if not allow_curated and self._check_curated(uid, db):
+            raise CuratedContentError(
+                f"Refusing to overwrite curated entry {uid}. "
+                f"Pass allow_curated=True to force."
+            )
 
         db.execute("""
             INSERT INTO bfa_projects (uid, slug, fingerprint, type, status, source,
@@ -190,13 +218,20 @@ class BfaProjectRepo:
             )
         db.commit()
 
-    def upsert_batch(self, projects: list[dict[str, Any]]) -> None:
+    def upsert_batch(self, projects: list[dict[str, Any]], *, allow_curated: bool = False) -> None:
         """Insert/update multiple projects in a single transaction."""
         db = get_db()
         try:
             for p in projects:
                 row = _project_to_row(p)
                 uid = row["uid"]
+
+                if not allow_curated and self._check_curated(uid, db):
+                    logger.warning(
+                        "Skipping curated entry %s in batch upsert", uid,
+                    )
+                    continue
+
                 db.execute("""
                     INSERT INTO bfa_projects (uid, slug, fingerprint, type, status, source,
                         project_record_id, fields_json, header_text, header_html,
@@ -226,8 +261,15 @@ class BfaProjectRepo:
             db.rollback()
             raise
 
-    def update_section(self, uid: str, name: str, text: str, html: str) -> None:
+    def update_section(self, uid: str, name: str, text: str, html: str, *, allow_curated: bool = False) -> None:
         db = get_db()
+
+        if not allow_curated and self._check_curated(uid, db):
+            raise CuratedContentError(
+                f"Refusing to update section on curated entry {uid}. "
+                f"Pass allow_curated=True to force."
+            )
+
         now = _now()
         db.execute("""
             INSERT INTO bfa_sections (project_uid, name, text, html, created_at, updated_at)

@@ -132,7 +132,8 @@ def import_from_html_file(filepath: str) -> dict[str, Any]:
         processed.append(process_project(p, resolver=resolver))
 
     # Save to SQLite (transaction-wrapped batch)
-    _project_repo.upsert_batch(processed)
+    # allow_curated=True: re-import IS the authoritative source of curated content
+    _project_repo.upsert_batch(processed, allow_curated=True)
 
     # Persist gdocs CSS so render_pipeline() and render_one() can reload it
     (pipeline_config.ASSETS_DIR / "gdocs.css").write_text(gdocs_css, encoding="utf-8")
@@ -410,7 +411,11 @@ def update_project_section(
     section_name: str,
     html: str,
 ) -> dict[str, Any] | None:
-    """Update a single section's HTML and persist to SQLite."""
+    """Update a single section's HTML and persist to SQLite.
+
+    Allows curated content edits — this is always a deliberate user action
+    via the composition view (preamble or project section edit).
+    """
     from .pipeline.processor import derive_metadata, get_section_meta
 
     project = _project_repo.get(uid)
@@ -424,7 +429,7 @@ def update_project_section(
     sections[section_name]["html"] = html
     sections[section_name]["text"] = _html_to_text(html)
     project["sections"] = sections
-    _project_repo.upsert(project)
+    _project_repo.upsert(project, allow_curated=True)
 
     _enrich_inline_html(project)
     project["derived"] = derive_metadata(project)
