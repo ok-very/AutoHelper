@@ -380,7 +380,10 @@ def _postprocess_docx(docx_path: Path, uid_map: list[dict[str, str]] | None = No
     # Fix bullet character: change abstract numbering definitions used by
     # preamble lists from • (Symbol \uf0b7) to ● (BLACK CIRCLE U+25CF)
     # matching the original document.
-    numbering_part = doc.part.numbering_part
+    try:
+        numbering_part = doc.part.numbering_part
+    except (KeyError, NotImplementedError):
+        numbering_part = None
     if numbering_part:
         # Collect abstractNumIds referenced by preamble list paragraphs
         preamble_abs_ids = set()

@@ -610,32 +610,40 @@ def refresh_dynamic_preamble_dates() -> int:
     today = date.today()
 
     for i, line in enumerate(lines):
+        # Strip format prefix if present (e.g. "b11|" or "p11|")
+        prefix = ""
+        content = line
+        sep = line.find("|")
+        if 0 < sep <= 4:
+            prefix = line[:sep + 1]
+            content = line[sep + 1:]
+
         # Title line: "Ballard Fine Art - To Do List <date>"
         # Date is always the next Monday (generated Fridays, delivered Mondays)
-        if line.startswith("Ballard Fine Art - To Do List"):
+        if "Ballard Fine Art - To Do List" in content:
             days_until_monday = (7 - today.weekday()) % 7
             if days_until_monday == 0:
                 days_until_monday = 7  # if today is Monday, use next Monday
             monday = today + timedelta(days=days_until_monday)
-            lines[i] = f"Ballard Fine Art - To Do List {monday.strftime('%B')} {monday.day}, {monday.year}"
+            lines[i] = f"{prefix}Ballard Fine Art - To Do List {monday.strftime('%B')} {monday.day}, {monday.year}"
             updated += 1
 
         # Richmond: 2nd Tuesday
-        elif line.startswith("Richmond:") and "biliana" in line.lower():
+        elif content.startswith("Richmond:") and "biliana" in content.lower():
             dates = _next_n_meetings(weekday=calendar.TUESDAY, nth=2, count=2, ref=today)
             date_str = ", ".join(_format_meeting_date(d) for d in dates)
             lines[i] = (
-                f"Richmond: {date_str} "
+                f"{prefix}Richmond: {date_str} "
                 f"*confirm with Biliana 2 weeks prior to the target date to present."
             )
             updated += 1
 
         # North Van: 2nd Thursday
-        elif line.startswith("North Van:") and "lori" in line.lower():
+        elif content.startswith("North Van:") and "lori" in content.lower():
             dates = _next_n_meetings(weekday=calendar.THURSDAY, nth=2, count=2, ref=today)
             date_str = ", ".join(_format_meeting_date(d) for d in dates)
             lines[i] = (
-                f"North Van: 2nd Thurs (6pm-8pm) Upcoming dates: {date_str} "
+                f"{prefix}North Van: 2nd Thurs (6pm-8pm) Upcoming dates: {date_str} "
                 f"*confirm with Lori Phillips 2 weeks prior the target date to present. "
                 f"DNV meetings are held at Delbrook Rec Centre"
             )

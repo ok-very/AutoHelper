@@ -65,6 +65,53 @@ def _render_section_html(text: str) -> str:
     return "\n".join(parts)
 
 
+def _render_preamble_html(text: str) -> str:
+    """Render preamble text with formatting prefixes to HTML.
+
+    Each line is prefixed with a format code:
+      B8|text   = bullet, 8pt (● prefix)
+      b8|text   = bold, 8pt
+      p8|text   = plain, 8pt
+      b11|text  = bold, 11pt
+      p11|text  = plain, 11pt
+      _|        = blank line
+
+    Reproduces the PM's exact paragraph formatting for Word COM conversion.
+    """
+    _STYLES = {
+        "B8":  'style="margin:0;font-size:8pt;font-family:Calibri,sans-serif;line-height:1.15;color:#000;margin-left:18pt;text-indent:-12pt"',
+        "b8":  'style="margin:0;font-size:8pt;font-family:Calibri,sans-serif;line-height:1.15;color:#000;font-weight:700"',
+        "p8":  'style="margin:0;font-size:8pt;font-family:Calibri,sans-serif;line-height:1.15;color:#000"',
+        "b11": 'style="margin:0;font-size:11pt;font-family:Calibri,sans-serif;line-height:1.15;color:#000;font-weight:700"',
+        "p11": 'style="margin:0;font-size:11pt;font-family:Calibri,sans-serif;line-height:1.15;color:#000"',
+    }
+    BLANK = '<p style="margin:0;font-size:8pt;line-height:1.15">&nbsp;</p>'
+
+    parts = []
+    for line in text.split("\n"):
+        if line.startswith("_|"):
+            parts.append(BLANK)
+            continue
+
+        sep = line.find("|")
+        if sep < 1 or sep > 4:
+            # No format prefix — treat as plain 11pt
+            parts.append(f'<p {_STYLES["p11"]}>{html_mod.escape(line)}</p>')
+            continue
+
+        fmt = line[:sep]
+        content = line[sep + 1:]
+        style_attr = _STYLES.get(fmt, _STYLES["p11"])
+
+        if fmt.startswith("B"):
+            # Bullet — prepend ● character
+            parts.append(f'<p {style_attr}>● {html_mod.escape(content)}</p>')
+        else:
+            parts.append(f'<p {style_attr}>{html_mod.escape(content)}</p>')
+
+    return "\n".join(parts)
+
+
 def _load_templates():
     env = Environment(
         loader=FileSystemLoader(str(config.TEMPLATE_DIR)),
@@ -178,6 +225,15 @@ def render_site(processed_projects, gdocs_css):
         base_css = parsed
 
     page_tpl, project_tpl, preamble_tpl, preamble_lists_tpl = _load_templates()
+
+    # Render preamble sections from formatted text
+    for p in processed_projects:
+        if p["type"] in ("preamble", "preamble-lists"):
+            for sec_data in p.get("sections", {}).values():
+                text = sec_data.get("text", "")
+                if text and "|" in text[:6]:
+                    # Has formatting prefixes — render with preamble formatter
+                    sec_data["html"] = _render_preamble_html(text)
 
     # Compute inline HTML from runs or text for project sections
     for p in processed_projects:
