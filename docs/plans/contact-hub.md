@@ -1,15 +1,18 @@
 # Contact Hub — Central Resolution Layer with Bidirectional Sync
 
-## Status: Session A in progress
+## Status: Session A complete, Session B/C pending
 
-### Completed
-- [x] DB migration: `contacts` + `project_contact_associations` tables (0014)
+### Session A (complete)
+- [x] DB migration: `contacts` + `project_contact_associations` tables (0014, 0015 address fields)
 - [x] Hub service: CRUD, search, association management, resolution (`hub.py`)
-- [x] CSV import pipeline (`import_csv.py`)
-- [x] Router: 18 endpoints (hub CRUD, associations, import, resolution)
+- [x] Canonical contact slots with role aliases for backward compat
+- [x] CSV import pipeline with Outlook export format support (`import_csv.py`)
+- [x] Router: hub CRUD, associations, import, resolution, Exchange session endpoints
 - [x] API client: hub search, CRUD, associations, resolution endpoints
-- [ ] ContactsPage UI: table view, search, category filter, detail view
-- [ ] ProjectDetailPage: team section showing associated contacts
+- [x] ContactsPage UI: table with search, category/staleness filters, pagination, expandable detail rows
+- [x] ProjectDetailPage: TeamCard showing contacts by role
+- [x] Hub → Exchange sync queue (`queue_for_exchange_sync`)
+- [x] Persistent Exchange session with MFA (`exchange_session.ps1`)
 
 ### Session B (pending)
 - [ ] Update `compose_email()` to resolve contacts from hub
@@ -27,49 +30,43 @@
 
 ## Architecture
 
+### Contact Slots
+
+Canonical slots defined in `hub.py:CONTACT_SLOTS`:
+- **Team:** contact, owner, architect, landscape
+- **Stage contacts:** ppap, dpap, eoi
+- **Selection:** sp1, ao, sp2, selection_panel
+- **Artists:** shortlisted_artist, selected_artist
+- **Advisory:** community_advisory, indigenous_advisor
+- **Generic:** project_coordinator, engineer, city_planner, other
+
+Legacy role aliases map to canonical slots (e.g. `developer` → `contact`).
+
 ### Data Model
 
-**contacts** — canonical contact record in SQLite:
+**contacts** table (0014 + 0015):
 - id, first_name, last_name, full_name, company, job_title
 - email_primary (unique), email_secondary
 - phone_business, phone_mobile
-- category (from 85 canonical categories)
-- notes, confidence (HIGH/MEDIUM/LOW), staleness_label (Active/Aging/Dormant)
-- exchange_id, clickup_contact_ref (sync identifiers)
+- street_address, city, state, postal_code, country
+- category, notes, confidence, staleness_label, last_seen
+- exchange_id, clickup_contact_ref
 - source (import/exchange/clickup/manual), created_at, updated_at
 
-**project_contact_associations** — links contacts to projects with a role:
-- id, contact_id (FK), project_id, role, is_primary, notes, created_at
-- Roles: developer, city_planner, artist, panel_member, architect, landscape_architect, community_advisor, indigenous_advisor, project_coordinator, engineer, other
-
-### API Endpoints
-
-| Method | Path | Purpose |
-|--------|------|---------|
-| GET | /contacts/hub | Search contacts (q, category, staleness, pagination) |
-| GET | /contacts/hub/categories | Distinct categories with counts |
-| GET | /contacts/hub/count | Total contact count |
-| GET | /contacts/hub/{id} | Get contact with associations |
-| POST | /contacts/hub | Create contact |
-| PUT | /contacts/hub/{id} | Update contact |
-| DELETE | /contacts/hub/{id} | Delete contact |
-| POST | /contacts/hub/import | Import from CSV (background) |
-| GET | /contacts/projects/{id}/contacts | Project's contacts by role |
-| POST | /contacts/projects/{id}/contacts | Associate contact with project |
-| DELETE | /contacts/associations/{id} | Remove association |
-| GET | /contacts/resolve/sender?email= | Resolve sender for mail triage |
-| GET | /contacts/resolve/project/{id}/merge-fields | Template merge fields |
+**project_contact_associations** table:
+- id, contact_id (FK), project_id, role (canonical slot), is_primary, notes, created_at
 
 ### Key Files
 
 | File | Purpose |
 |------|---------|
-| `autohelper/db/migrations/0014_contacts_hub.sql` | Schema |
-| `autohelper/modules/contacts/hub.py` | Hub service (CRUD, search, resolution) |
+| `autohelper/db/migrations/0014_contacts_hub.sql` | Core schema |
+| `autohelper/db/migrations/0015_contacts_address.sql` | Address columns |
+| `autohelper/modules/contacts/hub.py` | Hub service, slots, resolution |
 | `autohelper/modules/contacts/import_csv.py` | CSV import pipeline |
 | `autohelper/modules/contacts/router.py` | All endpoints |
+| `autohelper/modules/contacts/exchange_sync.py` | Exchange session + sync |
+| `autohelper/modules/contacts/powershell/exchange_session.ps1` | Persistent PS session |
+| `ui/src/pages/contacts/ContactsPage.tsx` | Contacts table UI |
+| `ui/src/pages/projects/ProjectDetailPage.tsx` | TeamCard component |
 | `ui/src/lib/api.ts` | Frontend API client |
-
-### Seed Data
-- `E:\scratch\BFA-Contacts-output\final_master_contacts.csv` — 9,068 contacts
-- `E:\scratch\BFA-Contacts-output\resolved_contacts.csv` — 417 manual reconciliations
