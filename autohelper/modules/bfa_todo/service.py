@@ -2,10 +2,11 @@
 
 from __future__ import annotations
 
+import calendar
 import json
 import re
 import shutil
-from datetime import datetime, timezone
+from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any
 
@@ -540,11 +541,121 @@ def suggest_preamble_updates() -> list[dict[str, Any]]:
     return suggestions
 
 
+def _nth_weekday(year: int, month: int, weekday: int, n: int) -> date:
+    """Return the nth occurrence of weekday in the given month.
+
+    weekday: 0=Mon, 1=Tue, ..., 6=Sun.  n: 1-based (1=first, 2=second).
+    """
+    first_day = date(year, month, 1)
+    # Days until the first occurrence of weekday in this month
+    offset = (weekday - first_day.weekday()) % 7
+    target = first_day + timedelta(days=offset + 7 * (n - 1))
+    return target
+
+
+def _next_n_meetings(weekday: int, nth: int, count: int = 2, ref: date | None = None) -> list[date]:
+    """Return the next `count` meeting dates for an nth-weekday-of-month rule."""
+    today = ref or date.today()
+    results: list[date] = []
+    year, month = today.year, today.month
+
+    for _ in range(count + 12):  # safety bound
+        d = _nth_weekday(year, month, weekday, nth)
+        if d >= today:
+            results.append(d)
+            if len(results) == count:
+                break
+        # Advance to next month
+        if month == 12:
+            year += 1
+            month = 1
+        else:
+            month += 1
+
+    return results
+
+
+def _format_meeting_date(d: date) -> str:
+    """Format as 'Mon DD, YYYY' e.g. 'Apr 8, 2026'."""
+    return f"{d.strftime('%b')} {d.day}, {d.year}"
+
+
+def refresh_dynamic_preamble_dates() -> int:
+    """Update auto-computed meeting dates in the main preamble.
+
+    Rules:
+      Richmond (RPAAC): 2nd Tuesday of each month, 4:30 PM
+      North Van: 2nd Thursday of each month, 6–8 PM
+
+    Updates the corresponding lines in the preamble content section.
+    Returns the number of lines updated.
+    """
+    preambles = _project_repo.get_by_type("preamble")
+    if not preambles:
+        return 0
+
+    # Find the main preamble (the one with PAC meeting content)
+    main = None
+    for p in preambles:
+        text = p.get("sections", {}).get("content", {}).get("text", "")
+        if "Richmond:" in text or "PUBLIC ART COMMITTEE" in text:
+            main = p
+            break
+    if not main:
+        return 0
+
+    text = main["sections"]["content"]["text"]
+    lines = text.split("\n")
+    updated = 0
+    today = date.today()
+
+    for i, line in enumerate(lines):
+        # Richmond: 2nd Tuesday
+        if line.startswith("Richmond:") and "biliana" in line.lower():
+            dates = _next_n_meetings(weekday=calendar.TUESDAY, nth=2, count=2, ref=today)
+            date_str = ", ".join(_format_meeting_date(d) for d in dates)
+            lines[i] = (
+                f"Richmond: {date_str} "
+                f"*confirm with Biliana 2 weeks prior to the target date to present."
+            )
+            updated += 1
+
+        # North Van: 2nd Thursday
+        elif line.startswith("North Van:") and "lori" in line.lower():
+            dates = _next_n_meetings(weekday=calendar.THURSDAY, nth=2, count=2, ref=today)
+            date_str = ", ".join(_format_meeting_date(d) for d in dates)
+            lines[i] = (
+                f"North Van: 2nd Thurs (6pm-8pm) Upcoming dates: {date_str} "
+                f"*confirm with Lori Phillips 2 weeks prior the target date to present. "
+                f"DNV meetings are held at Delbrook Rec Centre"
+            )
+            updated += 1
+
+    if updated:
+        new_text = "\n".join(lines)
+        import html as html_mod
+        new_html = "\n".join(
+            f"<p>{html_mod.escape(ln)}</p>" for ln in lines if ln.strip()
+        )
+        _project_repo.update_section(
+            main["uid"], "content", new_text, new_html, allow_curated=True,
+        )
+        logger.info("Refreshed %d dynamic preamble date lines", updated)
+
+    return updated
+
+
 def render_pipeline() -> dict[str, Any]:
     """Run the render pipeline: load from SQLite -> render HTML + JSON + GDocs payloads."""
     from .pipeline.renderer import render_all
 
     _ensure_seeded()
+
+    # Refresh dynamic dates in preamble before rendering
+    try:
+        refresh_dynamic_preamble_dates()
+    except Exception as e:
+        logger.warning("Dynamic preamble date refresh failed: %s", e)
 
     # Surface suggestions for preamble-lists (read-only — curated content is never overwritten)
     try:
