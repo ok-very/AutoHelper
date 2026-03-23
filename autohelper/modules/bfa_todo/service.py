@@ -610,8 +610,13 @@ def refresh_dynamic_preamble_dates() -> int:
     today = date.today()
 
     for i, line in enumerate(lines):
+        # Title line: "Ballard Fine Art - To Do List <date>"
+        if line.startswith("Ballard Fine Art - To Do List"):
+            lines[i] = f"Ballard Fine Art - To Do List {today.strftime('%B')} {today.day}, {today.year}"
+            updated += 1
+
         # Richmond: 2nd Tuesday
-        if line.startswith("Richmond:") and "biliana" in line.lower():
+        elif line.startswith("Richmond:") and "biliana" in line.lower():
             dates = _next_n_meetings(weekday=calendar.TUESDAY, nth=2, count=2, ref=today)
             date_str = ", ".join(_format_meeting_date(d) for d in dates)
             lines[i] = (
