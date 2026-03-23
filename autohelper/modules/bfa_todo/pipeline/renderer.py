@@ -5,12 +5,64 @@ Uses stored HTML fragments + canonical CSS (pruned Google Docs + base overrides)
 Wraps each project in uniform anchor-tagged sections.
 """
 
+import html as html_mod
 import re
 import shutil
 from jinja2 import Environment, FileSystemLoader
 from . import config
 from .style_resolver import StyleResolver, walk_html_for_runs, runs_to_inline_html
 from .gdocs_export import generate_gdocs_json
+
+
+# Known label prefixes that should render bold (PM format).
+# Sorted longest-first for greedy matching.
+_BOLD_LABELS = sorted([
+    "Community Advisory", "Selection Panel", "Shortlisted Artists",
+    "Selected Artist", "Fabrication 100%", "Fabrication 75%",
+    "Fabrication 50%", "Fabrication 25%", "Project Status",
+    "Artwork Title", "Final Report", "Installation", "Next Steps",
+    "Next Step", "Fabrication", "Landscape", "Architect", "Contact",
+    "NVPAAC Rep", "Storage", "Owner", "PPAP", "DPAP", "SP#1",
+    "SP#2", "EOI", "AO", "PM",
+], key=lambda x: -len(x))
+
+
+def _render_section_html(text: str) -> str:
+    """Render section text to HTML with bold label prefixes.
+
+    Matches PM format: each line with a recognized label prefix gets
+    the label portion wrapped in <b>. Lines are wrapped in <p> with
+    11pt Calibri inline style. Empty lines become blank <p> for spacing.
+    """
+    p_style = (
+        'style="margin:0;font-size:11pt;font-family:Calibri,sans-serif;'
+        'line-height:1.15;color:#000"'
+    )
+
+    parts = []
+    for line in text.split("\n"):
+        stripped = line.strip()
+        if not stripped:
+            parts.append(f"<p {p_style}>&nbsp;</p>")
+            continue
+
+        # Check for a known label prefix
+        rendered = False
+        for label in _BOLD_LABELS:
+            if stripped.startswith(label + ":") or stripped.startswith(label + " :"):
+                colon_pos = stripped.index(":")
+                label_part = html_mod.escape(stripped[:colon_pos + 1])
+                value_part = html_mod.escape(stripped[colon_pos + 1:])
+                parts.append(
+                    f"<p {p_style}><b>{label_part}</b>{value_part}</p>"
+                )
+                rendered = True
+                break
+
+        if not rendered:
+            parts.append(f"<p {p_style}>{html_mod.escape(stripped)}</p>")
+
+    return "\n".join(parts)
 
 
 def _load_templates():
@@ -127,24 +179,27 @@ def render_site(processed_projects, gdocs_css):
 
     page_tpl, project_tpl, preamble_tpl, preamble_lists_tpl = _load_templates()
 
-    # Compute inline HTML from runs for project sections
+    # Compute inline HTML from runs or text for project sections
     for p in processed_projects:
         if p["type"] == "project":
             for sec_data in p.get("sections", {}).values():
                 runs = sec_data.get("runs")
                 if runs:
                     sec_data["inline_html"] = runs_to_inline_html(runs)
+                elif sec_data.get("text"):
+                    # Render from text with bold labels (PM format)
+                    sec_data["inline_html"] = _render_section_html(sec_data["text"])
                 else:
                     sec_data["inline_html"] = sec_data.get("html", "")
-            # Header always gets fixed inline style
+            # Header: bold 11pt, no underline (matches PM format)
             header = p.get("header", {})
             header_text = header.get("text", "")
             if header_text:
                 escaped = (header_text.replace("&", "&amp;")
                            .replace("<", "&lt;").replace(">", "&gt;"))
                 header["inline_html"] = (
-                    f'<h3><span style="font-weight:700;text-decoration:underline;'
-                    f'font-size:11pt">{escaped}</span></h3>'
+                    f'<h3 style="font-size:11pt;font-weight:700;font-family:Calibri,sans-serif;'
+                    f'margin-top:0;margin-bottom:2pt">{escaped}</h3>'
                 )
             else:
                 header["inline_html"] = header.get("html", "")
@@ -260,23 +315,25 @@ def render_one(project_data: dict) -> str:
         if html.strip() and "runs" not in sec_data:
             sec_data["runs"] = walk_html_for_runs(html, resolver)
 
-    # 2. Build inline_html from runs (same as render_site lines 131-138)
+    # 2. Build inline_html from runs or text (same as render_site)
     for sec_data in project_data.get("sections", {}).values():
         runs = sec_data.get("runs")
         if runs:
             sec_data["inline_html"] = runs_to_inline_html(runs)
+        elif sec_data.get("text"):
+            sec_data["inline_html"] = _render_section_html(sec_data["text"])
         else:
             sec_data["inline_html"] = sec_data.get("html", "")
 
-    # 3. Build header inline_html (same as render_site lines 140-150)
+    # 3. Build header inline_html (matches PM format: bold 11pt, no underline)
     header = project_data.get("header", {})
     header_text = header.get("text", "")
     if header_text:
         escaped = (header_text.replace("&", "&amp;")
                    .replace("<", "&lt;").replace(">", "&gt;"))
         header["inline_html"] = (
-            f'<h3><span style="font-weight:700;text-decoration:underline;'
-            f'font-size:11pt">{escaped}</span></h3>'
+            f'<h3 style="font-size:11pt;font-weight:700;font-family:Calibri,sans-serif;'
+            f'margin-top:0;margin-bottom:2pt">{escaped}</h3>'
         )
     else:
         header["inline_html"] = header.get("html", "")
@@ -351,6 +408,10 @@ def render_all(projects, gdocs_css):
     resolver = StyleResolver(gdocs_css)
     for p in projects:
         for sec_data in p.get("sections", {}).values():
+            # Skip runs generation for sections with labeled text content —
+            # _render_section_html handles those with bold label formatting.
+            if sec_data.get("text"):
+                continue
             html = sec_data.get("html", "")
             if html.strip() and "runs" not in sec_data:
                 sec_data["runs"] = walk_html_for_runs(html, resolver)

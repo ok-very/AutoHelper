@@ -44,7 +44,8 @@ body.doc-content {
 
 /* ═══════════════════════════════════════════
    PROJECT CARD LAYOUT
-   (styles are now inline — no class-based overrides needed)
+   Matches PM-established format: 11pt Calibri,
+   no indent, bold labels, blank-line section separators
    ═══════════════════════════════════════════ */
 .bfa-project {
     margin-bottom: 10pt;
@@ -58,28 +59,29 @@ body.doc-content {
     padding-top: 2pt;
 }
 
-/* ── Compact paragraph spacing ── */
+/* ── Compact paragraph spacing, 11pt to match PM format ── */
 .bfa-project p {
     padding-top: 0pt !important;
     padding-bottom: 0pt !important;
     margin-top: 0 !important;
     margin-bottom: 0 !important;
     line-height: 1.15 !important;
-    font-size: 10pt !important;
+    font-size: 11pt !important;
 }
 
-/* ── Consistent indentation within sections ── */
-.bfa-section p {
-    margin-left: 10pt !important;
+/* ── Section spacing: blank line between section groups ── */
+.bfa-section {
+    margin-top: 6pt;
 }
+
 .bfa-section ul, .bfa-section ol {
-    margin-left: 28pt !important;
+    margin-left: 18pt !important;
     padding-left: 0 !important;
     margin-top: 0 !important;
     margin-bottom: 0 !important;
 }
 .bfa-section li {
-    font-size: 10pt !important;
+    font-size: 11pt !important;
     line-height: 1.15 !important;
     list-style-type: disc;
 }

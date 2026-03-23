@@ -13,8 +13,8 @@ ALIASES_FILE = DATA_DIR / "aliases.yaml"
 
 # Output directory for .docx and .pdf artifacts
 OUTPUT_DIR = Path(
-    "C:/Users/silen/OneDrive - Ballard Fine Art"
-    "/BALLARD FINE ART - ALL FILES/4. TO DO LIST/2026"
+    "E:/OneDrive - Ballard Fine Art"
+    "/BALLARD FINE ART - ALL FILES/4. TO DO LIST/2026/_bfa"
 )
 
 # Templates are bundled with the package
