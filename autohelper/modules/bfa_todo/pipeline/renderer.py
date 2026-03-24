@@ -226,13 +226,18 @@ def render_site(processed_projects, gdocs_css):
 
     page_tpl, project_tpl, preamble_tpl, preamble_lists_tpl = _load_templates()
 
-    # Render preamble sections from formatted text
+    # Preamble sections: if html has rich tags, use it directly (pass-through).
+    # If html is absent/plain, fall back to format-prefix rendering from text.
     for p in processed_projects:
         if p["type"] in ("preamble", "preamble-lists"):
             for sec_data in p.get("sections", {}).values():
+                html = sec_data.get("html", "")
+                if html and "<p " in html:
+                    # Render-ready HTML from docx ingestion — pass through
+                    continue
                 text = sec_data.get("text", "")
                 if text and "|" in text[:6]:
-                    # Has formatting prefixes — render with preamble formatter
+                    # Legacy format prefixes — render with preamble formatter
                     sec_data["html"] = _render_preamble_html(text)
 
     # Compute inline HTML from runs or text for project sections
@@ -459,18 +464,25 @@ def render_all(projects, gdocs_css):
 
     Shared entry point used by both run.py and reconcile.py.
     """
-    _update_preamble_date(projects)
+    # Date updates are handled by refresh_dynamic_preamble_dates() in service.py
+    # which writes the correct next-Monday date to the DB BEFORE render_all is called.
+    # Do NOT update dates here — it would overwrite the correct date with today's date.
+
+    _RICH_TAGS = ("<b>", "<i>", "<s>", '<span style=', '<a href=')
 
     resolver = StyleResolver(gdocs_css)
     for p in projects:
         for sec_data in p.get("sections", {}).values():
-            # Skip runs generation for sections with labeled text content —
-            # _render_section_html handles those with bold label formatting.
-            if sec_data.get("text"):
-                continue
             html = sec_data.get("html", "")
-            if html.strip() and "runs" not in sec_data:
+            if not html.strip():
+                continue
+            # Rich HTML from docx ingestion → parse into styled runs
+            if any(tag in html for tag in _RICH_TAGS):
                 sec_data["runs"] = walk_html_for_runs(html, resolver)
+            # GDocs-sourced HTML with class-based styling → parse into runs
+            elif html.strip() and "runs" not in sec_data and "class=" in html:
+                sec_data["runs"] = walk_html_for_runs(html, resolver)
+            # Plain HTML (ClickUp sync) → skip, _render_section_html handles via text
 
     html_path, pasteable_path = render_site(projects, gdocs_css)
     json_path = generate_json(projects)

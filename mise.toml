@@ -47,3 +47,11 @@ run = "python scripts/build_installer.py"
 [tasks."build:exe"]
 description = "PyInstaller only (no copy to desktop)"
 run = "python -m PyInstaller scripts/autohelper.spec --clean --noconfirm"
+
+[tasks."test:bfa"]
+description = "Fast BFA unit tests (extractor + HTML prep)"
+run = "python -m pytest tests/test_docx_run_extractor.py tests/test_prepare_html_for_word.py -x -q --tb=short"
+
+[tasks."test:bfa:full"]
+description = "Full BFA test suite including round-trip integration"
+run = "python -m pytest tests/test_docx_run_extractor.py tests/test_prepare_html_for_word.py tests/test_render_round_trip.py -x -q --tb=short"

@@ -118,25 +118,9 @@ def _prepare_html_for_word(html: str) -> str:
             "header": h3.get_text(strip=True) if h3 else "",
         })
 
-    # -- Update heading date --
-    now = datetime.now()
-    today_str = f"{now.strftime('%B')} {now.day}, {now.year}"
-    for preamble in body.find_all("section", class_="bfa-preamble"):
-        for span in preamble.find_all("span"):
-            if span.string and "To Do List" in span.string:
-                span.string = re.sub(
-                    r"(To Do List\s+)\w+ \d{1,2},?\s*\d{4}",
-                    rf"\g<1>{today_str}",
-                    span.string,
-                )
-                break
-        else:
-            for span in preamble.find_all("span"):
-                if span.string and "To Do List" in span.string:
-                    nxt = span.find_next_sibling("span")
-                    if nxt and nxt.string and re.match(r"\w+ \d{1,2},?\s*\d{4}", nxt.string.strip()):
-                        nxt.string = today_str
-                    break
+    # Date is already correct in the HTML — set by refresh_dynamic_preamble_dates()
+    # in service.py before rendering. Do NOT update here (it would overwrite the
+    # correct next-Monday date with today, and el.string= destroys <b> children).
 
     # -- Flatten tables inside project sections only --
     # Preamble tables (PAC schedule) stay as Word tables.
@@ -186,10 +170,23 @@ def _prepare_html_for_word(html: str) -> str:
 # Stage 2: Word COM conversion
 # ---------------------------------------------------------------------------
 
+def _kill_stale_word():
+    """Kill any orphaned WINWORD.EXE processes before starting COM automation."""
+    import subprocess
+    result = subprocess.run(
+        ["pwsh", "-NoProfile", "-Command",
+         "Get-Process WINWORD -ErrorAction SilentlyContinue | Stop-Process -Force"],
+        capture_output=True, text=True,
+    )
+    if result.returncode == 0:
+        logger.debug("Cleaned up stale Word processes")
+
+
 def _html_to_docx_via_word(html_path: Path, docx_path: Path) -> Path:
     import pythoncom
     import win32com.client
 
+    _kill_stale_word()
     pythoncom.CoInitialize()
     word = None
     doc = None
@@ -217,6 +214,8 @@ def _html_to_docx_via_word(html_path: Path, docx_path: Path) -> Path:
                 word.Quit()
             except Exception:
                 pass
+            # Belt and suspenders: kill if Quit didn't work
+            _kill_stale_word()
         pythoncom.CoUninitialize()
 
     return docx_path
@@ -227,6 +226,7 @@ def _docx_to_pdf(docx_path: Path, pdf_path: Path) -> Path:
     import pythoncom
     import win32com.client
 
+    _kill_stale_word()
     pythoncom.CoInitialize()
     word = None
     doc = None
@@ -247,6 +247,7 @@ def _docx_to_pdf(docx_path: Path, pdf_path: Path) -> Path:
                 word.Quit()
             except Exception:
                 pass
+            _kill_stale_word()
         pythoncom.CoUninitialize()
 
     return pdf_path
@@ -305,6 +306,61 @@ def _postprocess_docx(docx_path: Path, uid_map: list[dict[str, str]] | None = No
         idx_city_policies, idx_proposals, idx_first_project, len(project_header_indices),
     )
 
+    # ── Step 1b: Fix preamble table borders to match source ──────────────
+    # Word COM imports CSS border:1px solid as sz=4 color=auto.
+    # Source has sz=8 color=000000 (thick black borders).
+    for tbl in doc.element.body.findall(qn("w:tbl")):
+        # Only fix tables BEFORE the first project (preamble area)
+        tbl_pos = list(doc.element.body).index(tbl)
+        first_proj_pos = list(doc.element.body).index(paras[idx_first_project]._element)
+        if tbl_pos >= first_proj_pos:
+            continue
+        tblPr = tbl.find(qn("w:tblPr"))
+        if tblPr is None:
+            tblPr = etree.SubElement(tbl, qn("w:tblPr"))
+            tbl.insert(0, tblPr)
+        # Remove existing borders
+        old_borders = tblPr.find(qn("w:tblBorders"))
+        if old_borders is not None:
+            tblPr.remove(old_borders)
+        # Add source-matching borders: single, sz=8, black
+        borders = etree.SubElement(tblPr, qn("w:tblBorders"))
+        for side in ("top", "left", "bottom", "right", "insideH", "insideV"):
+            b = etree.SubElement(borders, qn(f"w:{side}"))
+            b.set(qn("w:val"), "single")
+            b.set(qn("w:sz"), "8")
+            b.set(qn("w:space"), "0")
+            b.set(qn("w:color"), "000000")
+        logger.info("Step 1b — fixed preamble table borders to sz=8 black")
+
+    # ── Step 1c: Shrink header detail lines to 8pt ─────────────────────
+    # Lines between the title and the section break (PAC meetings, live
+    # broadcast, Vancouver schedule) must be 8pt to match the preamble
+    # detail text and prevent Saanich from spilling to page 2.
+    # Must also fix hyperlink runs which have their own w:sz properties.
+    _SHRINK_SIZE = 101600  # 8pt in EMU
+    _SHRINK_SZ_VAL = "16"  # 8pt in half-points (w:sz value)
+    _HEADER_KEYWORDS = ("PUBLIC ART COMMITTEE", "Live broadcast", "Vancouver schedule")
+    for i in range(min(idx_city_policies, len(paras))):
+        t = (paras[i].text or "")
+        if not any(kw in t for kw in _HEADER_KEYWORDS):
+            continue
+        # Fix regular runs
+        for r in paras[i].runs:
+            r.font.size = _SHRINK_SIZE
+        # Fix hyperlink runs (have their own w:rPr/w:sz that overrides)
+        for hl in paras[i]._element.findall(qn("w:hyperlink")):
+            for r_el in hl.findall(qn("w:r")):
+                rPr = r_el.find(qn("w:rPr"))
+                if rPr is not None:
+                    sz = rPr.find(qn("w:sz"))
+                    if sz is not None:
+                        sz.set(qn("w:val"), _SHRINK_SZ_VAL)
+                    szCs = rPr.find(qn("w:szCs"))
+                    if szCs is not None:
+                        szCs.set(qn("w:val"), _SHRINK_SZ_VAL)
+        logger.info("Step 1c — shrunk para %d to 8pt: %s", i, t[:50])
+
     # ── Step 2: Normalize styles (paragraphs are still proper objects) ───
 
     normal_style = doc.styles["Normal"]
@@ -340,15 +396,22 @@ def _postprocess_docx(docx_path: Path, uid_map: list[dict[str, str]] | None = No
                 spacing.set(qn("w:beforeAutospacing"), "0")
                 spacing.set(qn("w:afterAutospacing"), "0")
 
-        # Fix list paragraph indentation
-        if pPr_el is not None and pPr_el.find(qn("w:numPr")) is not None:
+        # Fix list paragraph indentation — matches source (179705 left, no first-line)
+        # Handles both Word numPr bullets AND text ● bullets from HTML extraction
+        is_numpr = pPr_el is not None and pPr_el.find(qn("w:numPr")) is not None
+        is_text_bullet = "\u25cf" in (p.text or "")  # ● character
+        if is_numpr or is_text_bullet:
             pf.left_indent = 179705
-            pf.first_line_indent = -228600
+            pf.first_line_indent = None
             list_fixes += 1
 
-    # Page break before "Proposals (New Projects)" so it gets its own page
+    # Fix Proposals header: source has bold, inherits size (not 8pt)
     if idx_proposals is not None:
         paras[idx_proposals].paragraph_format.page_break_before = True
+        for r in paras[idx_proposals].runs:
+            r.bold = True
+            if r.font.size and r.font.size / 12700 < 9:
+                r.font.size = None  # Clear explicit 8pt → inherit Normal (11pt)
 
     # Insert blank paragraph separators between preamble list sub-blocks.
     # Original has blanks before: Art Plans, MASTER PUBLIC ART PLAN,
@@ -556,6 +619,112 @@ def _postprocess_docx(docx_path: Path, uid_map: list[dict[str, str]] | None = No
     # flow.  With spacing now matching the original, forced breaks are more
     # disruptive than helpful.  Re-enable if the user wants explicit control.
     # _apply_project_page_breaks(doc, idx_first_project)
+
+    # ── Step 6a helpers ──────────────────────────────────────────────────
+
+    def _ensure_run_bold(run_el):
+        """Set w:b on a w:r element."""
+        rPr = run_el.find(qn("w:rPr"))
+        if rPr is None:
+            rPr = etree.SubElement(run_el, qn("w:rPr"))
+            run_el.insert(0, rPr)
+        b = rPr.find(qn("w:b"))
+        if b is None:
+            etree.SubElement(rPr, qn("w:b"))
+        elif b.get(qn("w:val")) == "false":
+            del b.attrib[qn("w:val")]
+
+    def _split_and_bold_run(run_el, split_at):
+        """Split a w:r at character position split_at, bold the first part."""
+        from copy import deepcopy
+        # Collect text from w:t elements
+        t_els = list(run_el.iter(qn("w:t")))
+        full_text = "".join((t.text or "") for t in t_els)
+        label_text = full_text[:split_at]
+        value_text = full_text[split_at:]
+
+        if not value_text.strip():
+            # Nothing after the label — just bold the whole run
+            _ensure_run_bold(run_el)
+            return
+
+        # Create a new run for the value portion (clone formatting)
+        value_run = deepcopy(run_el)
+
+        # Set text on original (label part) and new (value part)
+        for t in t_els:
+            t.text = ""
+        if t_els:
+            t_els[0].text = label_text
+
+        value_t_els = list(value_run.iter(qn("w:t")))
+        for t in value_t_els:
+            t.text = ""
+        if value_t_els:
+            value_t_els[0].text = value_text
+
+        # Bold the label run
+        _ensure_run_bold(run_el)
+
+        # Insert value run right after the label run
+        run_el.addnext(value_run)
+
+    # ── Step 6a: Enforce bold on project field labels ────────────────────
+    # Labels like "Contact:", "AO:", "SP#1:" must always be bold regardless
+    # of whether the source had bold formatting. Sorted longest-first for
+    # greedy matching.
+    _BOLD_LABELS = sorted([
+        "Community Advisory", "Selection Panel", "Shortlisted Artists",
+        "Selected Artist", "Fabrication 100%", "Fabrication 75%",
+        "Fabrication 50%", "Fabrication 25%", "Project Status",
+        "Artwork Title", "Final Report", "Installation", "Next Steps",
+        "Next Step", "Fabrication", "Landscape", "Architect", "Contact",
+        "NVPAAC Rep", "Storage", "Owner", "PPAP", "DPAP", "SP#1",
+        "SP#2", "EOI", "AO", "PM",
+    ], key=lambda x: -len(x))
+    label_fixes = 0
+    # Iterate ALL w:p elements (including inside SDTs from previous runs)
+    # rather than doc.paragraphs which only sees top-level paragraphs.
+    for p_el in doc.element.body.iter(qn("w:p")):
+        text = "".join(
+            (t.text or "") for t in p_el.iter(qn("w:t"))
+        ).strip()
+        matched_label = None
+        for label in _BOLD_LABELS:
+            if text.startswith(label + ":") or text.startswith(label + " :"):
+                matched_label = label
+                break
+        if not matched_label:
+            continue
+        # Bold runs that contain the label portion.
+        # Two cases: (a) label is in its own short run → bold that run,
+        # (b) label + value in one long run → split at colon, bold the label part.
+        colon_target = len(matched_label) + 1  # label text + colon
+        chars_seen = 0
+        for child in p_el:
+            if child.tag != qn("w:r"):
+                continue
+            r_text = "".join(
+                (t.text or "") for t in child.iter(qn("w:t"))
+            )
+            r_len = len(r_text)
+
+            if chars_seen + r_len <= colon_target:
+                # Short run: entirely within the label — bold it
+                _ensure_run_bold(child)
+                label_fixes += 1
+            elif chars_seen < colon_target and r_len > colon_target - chars_seen:
+                # Long run: contains label + value — split at colon boundary
+                split_at = colon_target - chars_seen
+                _split_and_bold_run(child, split_at)
+                label_fixes += 1
+
+            chars_seen += r_len
+            if chars_seen >= colon_target:
+                break
+
+    if label_fixes:
+        logger.info("Step 6a — bolded %d runs for project field labels", label_fixes)
 
     # Convert character shading to native Word highlight (editable in Word)
     # Word COM imports CSS background-color as w:shd (character shading) which
@@ -806,13 +975,20 @@ def _match_headers_to_uids(
     remaining = list(uid_map)
     matched: list[tuple[int, str]] = []
 
+    def _norm(t):
+        """Normalize for matching: dashes, whitespace, case."""
+        t = t.replace("\u2013", "-").replace("\u2014", "-")
+        t = t.replace("\u00a0", " ")
+        import re
+        return re.sub(r"[\s\t]+", " ", t).strip().lower()
+
     for idx in header_indices:
-        docx_header = (paras[idx].text or "").strip().lower()
+        docx_header = _norm(paras[idx].text or "")
         best_entry = None
         best_score = 0
 
         for entry in remaining:
-            hint = entry["header"].lower()
+            hint = _norm(entry["header"])
             if not hint:
                 continue
             # Exact match

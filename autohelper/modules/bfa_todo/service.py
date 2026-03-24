@@ -629,7 +629,7 @@ def refresh_dynamic_preamble_dates() -> int:
             updated += 1
 
         # Richmond: 2nd Tuesday
-        elif content.startswith("Richmond:") and "biliana" in content.lower():
+        elif content.strip().startswith("Richmond:") and "biliana" in content.lower():
             dates = _next_n_meetings(weekday=calendar.TUESDAY, nth=2, count=2, ref=today)
             date_str = ", ".join(_format_meeting_date(d) for d in dates)
             lines[i] = (
@@ -639,7 +639,7 @@ def refresh_dynamic_preamble_dates() -> int:
             updated += 1
 
         # North Van: 2nd Thursday
-        elif content.startswith("North Van:") and "lori" in content.lower():
+        elif content.strip().startswith("North Van:") and "lori" in content.lower():
             dates = _next_n_meetings(weekday=calendar.THURSDAY, nth=2, count=2, ref=today)
             date_str = ", ".join(_format_meeting_date(d) for d in dates)
             lines[i] = (
@@ -651,10 +651,65 @@ def refresh_dynamic_preamble_dates() -> int:
 
     if updated:
         new_text = "\n".join(lines)
-        import html as html_mod
-        new_html = "\n".join(
-            f"<p>{html_mod.escape(ln)}</p>" for ln in lines if ln.strip()
+
+        # Update HTML: dates are embedded in rich HTML with <a>, <span>, <b> tags.
+        # Pure string surgery — no BS parsing, no re-serialization, no opinions.
+        # Dates are plain text between tags, so regex finds them directly.
+        import re as _re
+        new_html = main["sections"]["content"].get("html", "")
+
+        # Date pattern: "Month Day, Year" as plain text (not inside tag attributes)
+        _DATE_RE = r'(?:Jan(?:uary)?|Feb(?:ruary)?|Mar(?:ch)?|Apr(?:il)?|May|Jun(?:e)?|Jul(?:y)?|Aug(?:ust)?|Sep(?:t(?:ember)?)?|Oct(?:ober)?|Nov(?:ember)?|Dec(?:ember)?)\s+\d{1,2},?\s*\d{4}'
+
+        # Title date — plain text inside <b>, regex works fine
+        new_html = _re.sub(
+            r"(To Do List\s+)\w+ \d{1,2},?\s*\d{4}",
+            lambda m: m.group(1) + next(
+                ln.split("To Do List")[1].strip()
+                for ln in lines if "Ballard Fine Art - To Do List" in ln
+            ),
+            new_html,
         )
+
+        # Richmond/NorthVan: find the <p>...</p> span containing the keyword,
+        # then replace date patterns within ONLY that substring.
+        def _replace_dates_in_p(html, keyword, secondary_keyword, new_dates):
+            """Find <p ...>...keyword...secondary...</p> and replace dates inside it."""
+            # Match <p with any attributes, then content (including nested tags),
+            # then </p>. Use re.DOTALL so . matches newlines within the element.
+            for m in _re.finditer(r'<p\b[^>]*>.*?</p>', html, _re.DOTALL):
+                span = m.group()
+                # Strip tags to get text for keyword matching
+                text_only = _re.sub(r'<[^>]+>', '', span)
+                if keyword in text_only and secondary_keyword in text_only.lower():
+                    old_dates = _re.findall(_DATE_RE, span)
+                    if old_dates and new_dates:
+                        new_span = span
+                        for old_d, new_d in zip(old_dates, new_dates):
+                            new_span = new_span.replace(old_d, new_d, 1)
+                        return html.replace(span, new_span, 1)
+            return html
+
+        # Richmond dates
+        for ln in lines:
+            if ln.strip().startswith("Richmond:") and "biliana" in ln.lower():
+                new_dates = _re.findall(_DATE_RE, ln)
+                if new_dates:
+                    new_html = _replace_dates_in_p(
+                        new_html, "Richmond", "iliana", new_dates,
+                    )
+                break
+
+        # North Van dates
+        for ln in lines:
+            if ln.strip().startswith("North Van:") and "lori" in ln.lower():
+                new_dates = _re.findall(_DATE_RE, ln)
+                if new_dates:
+                    new_html = _replace_dates_in_p(
+                        new_html, "North Van", "ori", new_dates,
+                    )
+                break
+
         _project_repo.update_section(
             main["uid"], "content", new_text, new_html, allow_curated=True,
         )
