@@ -82,6 +82,33 @@ async def render() -> dict[str, Any]:
         raise HTTPException(500, f"Render failed: {e}")
 
 
+class ExportChangesRequest(BaseModel):
+    """Batch section edits from the composition view."""
+    changes: list[dict[str, Any]]  # [{ uid, sections: { name: html } }]
+
+
+@router.post("/export")
+async def export_changes(req: ExportChangesRequest) -> dict[str, Any]:
+    """Persist edited sections and re-render."""
+    sections_saved = 0
+    for entry in req.changes:
+        uid = entry.get("uid", "")
+        sections = entry.get("sections", {})
+        for sec_name, html in sections.items():
+            try:
+                result = service.update_project_section(uid, sec_name, html)
+                if result is not None:
+                    sections_saved += 1
+            except CuratedContentError:
+                logger.warning("Skipped curated section %s/%s", uid, sec_name)
+    # Re-render after all saves
+    try:
+        service.render_pipeline()
+    except Exception as e:
+        logger.error("Post-export render failed: %s", e, exc_info=True)
+    return {"sections_saved": sections_saved}
+
+
 class ImportExcelRequest(BaseModel):
     filepath: str
 

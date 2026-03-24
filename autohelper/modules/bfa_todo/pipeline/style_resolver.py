@@ -36,6 +36,7 @@ _TAG_STYLES = {
     "i": "italic",
     "s": "strikethrough",
     "strike": "strikethrough",
+    "del": "strikethrough",
     "u": "underline",
 }
 
@@ -143,6 +144,72 @@ def _collapse_ws(text):
     return re.sub(r"[ \t]{2,}", " ", text)
 
 
+def _rgb_to_hex(rgb_str):
+    """Convert 'rgb(R, G, B)' to '#rrggbb'.  Returns None on failure."""
+    m = re.match(r"rgb\(\s*(\d+)\s*,\s*(\d+)\s*,\s*(\d+)\s*\)", rgb_str.strip())
+    if not m:
+        return None
+    r, g, b = int(m.group(1)), int(m.group(2)), int(m.group(3))
+    return f"#{r:02x}{g:02x}{b:02x}"
+
+
+def _parse_inline_style(style_str, styles, rich):
+    """Extract semantic styles and rich properties from an inline style string.
+
+    Mutates ``styles`` (list) and ``rich`` (dict) in place.
+    Handles both hex (#RRGGBB) and rgb(R, G, B) color formats.
+    """
+    if not style_str:
+        return
+
+    # font-weight: bold / 700
+    fw = re.search(r"font-weight\s*:\s*([^;]+)", style_str)
+    if fw:
+        val = fw.group(1).strip().lower()
+        if val in ("bold", "700", "800", "900") and "bold" not in styles:
+            styles.append("bold")
+
+    # font-style: italic
+    fs = re.search(r"font-style\s*:\s*([^;]+)", style_str)
+    if fs and fs.group(1).strip().lower() == "italic" and "italic" not in styles:
+        styles.append("italic")
+
+    # text-decoration: line-through
+    td = re.search(r"text-decoration\s*:\s*([^;]+)", style_str)
+    if td and "line-through" in td.group(1).lower() and "strikethrough" not in styles:
+        styles.append("strikethrough")
+
+    # background-color → highlight / rich bg_color
+    bg = re.search(r"background-color\s*:\s*([^;]+)", style_str)
+    if bg:
+        val = bg.group(1).strip().lower()
+        hex_color = val if val.startswith("#") else _rgb_to_hex(val)
+        if hex_color and hex_color != "transparent":
+            # Known highlight yellows → semantic "highlight"
+            if hex_color in ("#ffff00", "#fff000", "#fff3b0", "#ffff0e"):
+                if "highlight" not in styles:
+                    styles.append("highlight")
+            # All background colors → rich property
+            if hex_color != "#ffffff":
+                rich["bg_color"] = hex_color
+
+    # color → rich fg_color / semantic "red"
+    # Use negative lookbehind to avoid matching background-color
+    fg = re.search(r"(?<!background-)color\s*:\s*([^;]+)", style_str)
+    if fg:
+        val = fg.group(1).strip().lower()
+        hex_color = val if val.startswith("#") else _rgb_to_hex(val)
+        if hex_color and hex_color not in ("#000000", "#000"):
+            rich["fg_color"] = hex_color
+            if hex_color == "#ff0000" and "red" not in styles:
+                styles.append("red")
+
+    # font-size → rich font_size_pt
+    fz = re.search(r"font-size\s*:\s*([\d.]+)\s*pt", style_str)
+    if fz:
+        rich["font_size_pt"] = float(fz.group(1))
+
+
 def walk_html_for_runs(html_str, resolver):
     """Parse an HTML fragment into styled runs.
 
@@ -186,6 +253,12 @@ def walk_html_for_runs(html_str, resolver):
             rp = resolver.resolve_rich(class_str)
             if rp:
                 rich.update(rp)
+
+            # Detect styles + rich properties from inline style attribute
+            # (contentEditable / execCommand produces inline styles, not classes)
+            inline_style = node.get("style", "")
+            if inline_style:
+                _parse_inline_style(inline_style, styles, rich)
 
         # Also check <p> tags for class-based sizing
         if node.tag == "p":

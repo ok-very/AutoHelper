@@ -16,12 +16,15 @@ interface ProjectRowProps {
   onProjectUpdated: () => void
 }
 
-function ProjectCompositionView({ uid }: { uid: string }) {
+function ProjectCompositionView({ uid, onProjectUpdated }: { uid: string; onProjectUpdated: () => void }) {
   return (
     <IframeCompositionView
       uid={uid}
       fetchUrl={`/api/bfa-todo/projects/${uid}/html`}
-      onSaveSection={(sectionName, html) => api.bfaTodo.updateSection(uid, sectionName, html)}
+      onSaveSection={async (sectionName, html) => {
+        await api.bfaTodo.updateSection(uid, sectionName, html)
+        onProjectUpdated()
+      }}
       title={`Project ${uid}`}
     />
   )
@@ -185,7 +188,7 @@ export function ProjectRow({
           <span style={{ fontSize: '11px', color: 'var(--fg-secondary)', minWidth: 80, textAlign: 'right' }}>{project.city}</span>
           <span style={{ width: 1, height: 12, background: 'var(--border)' }} />
           <Badge variant="phase" size="xs">{project.phase}</Badge>
-          <Badge variant="neutral" size="xs" title={leadTitle}>{project.owner_team}</Badge>
+          <Badge variant="neutral" size="xs">{project.owner_team}</Badge>
           {project.status === 'on_hold' && <Badge variant="neutral" size="xs">ON HOLD</Badge>}
           {hasIssues ? (
             <button
@@ -206,7 +209,7 @@ export function ProjectRow({
           )}
         </div>
       </div>
-      {isExpanded && <ProjectCompositionView uid={project.uid} />}
+      {isExpanded && <ProjectCompositionView uid={project.uid} onProjectUpdated={onProjectUpdated} />}
     </div>
   )
 }

@@ -1,0 +1,1 @@
+import{j as a}from"./settings-DF93i-N1.js";function n({message:e,isError:s}){return e?a.jsxDEV("span",{className:`save-feedback ${s?"save-err":"save-ok"}`,children:e},void 0,!1,{fileName:"C:/Users/Neal/dev/autohelper/ui/src/components/FeedbackMessage.tsx",lineNumber:9,columnNumber:5},this):null}export{n as F};

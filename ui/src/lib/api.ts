@@ -305,6 +305,8 @@ export const api = {
       }),
     updatePreambleSection: (uid: string, sectionName: string, html: string) =>
       put(`/api/bfa-todo/preambles/${uid}/sections/${sectionName}`, { html }).then(r => r.json()),
+    exportChanges: (changes: { uid: string; sections: Record<string, string> }[]) =>
+      post('/api/bfa-todo/export', { changes }).then(r => r.json()),
   },
 
   legalLetters: {
@@ -323,6 +325,50 @@ export const api = {
       post('/api/documents/docx/pipeline', { template_key: templateKey, project_id: projectId }).then(r => r.json()),
     updateFields: (projectId: string, fields: Record<string, string>) =>
       put(`/api/projects/${projectId}/legal-fields`, fields).then(r => r.json()),
+  },
+
+  contextMap: {
+    projectsWithAddress: () =>
+      fetchJson<{ id: string; project_name: string; civic_address: string; municipality: string; status: string; source?: string }[]>(
+        '/api/documents/context-map/projects-with-address'
+      ),
+    previewPois: (address: string, radiusKm: number) =>
+      post('/api/documents/context-map/preview-pois', { address, radius_km: radiusKm }).then(r => r.json()) as Promise<{
+        address: string; lat: number; lon: number; radius_km: number;
+        categories: Record<string, { name: string; distance_m: number; osm_id: number; lat: number; lon: number }[]>;
+        summary: Record<string, number>;
+      }>,
+    renderProject: async (body: {
+      project_id: string;
+      map_type: string;
+      layout?: { orientation: string; legend_position: string; show_radius: boolean };
+      context_artworks?: { number: number; artist: string; title: string; year: number | null; address: string }[];
+      layers?: string[];
+      radius_km?: number;
+    }): Promise<Blob> => {
+      const res = await fetch('/api/documents/context-map/project', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
+      });
+      if (!res.ok) throw new Error(`Render failed: ${res.status}`);
+      return res.blob();
+    },
+  },
+
+  artworks: {
+    search: (q: string) => fetchJson<any[]>(`/api/artworks?q=${encodeURIComponent(q)}`),
+    list: () => fetchJson<any[]>('/api/artworks'),
+    create: (data: { artist: string; title: string; year?: number | null; address?: string; municipality?: string }) =>
+      post('/api/artworks', data).then(r => r.json()),
+    forProject: (projectId: string, role = 'context') =>
+      fetchJson<any[]>(`/api/artworks/project/${projectId}?role=${role}`),
+    associate: (projectId: string, artworkId: string, role: string, displayOrder: number) =>
+      post(`/api/artworks/project/${projectId}/associate`, { artwork_id: artworkId, role, display_order: displayOrder }),
+    dissociate: (projectId: string, artworkId: string, role = 'context') =>
+      fetch(`/api/artworks/project/${projectId}/${artworkId}?role=${role}`, { method: 'DELETE' }),
+    upsert: (data: { artist: string; title: string; year?: number | null; address?: string }) =>
+      post('/api/artworks/upsert', data).then(r => r.json()),
   },
 
   health: () => fetchJson<Record<string, unknown>>('/health'),
